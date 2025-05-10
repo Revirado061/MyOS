@@ -1,4 +1,4 @@
-package com.group.myos.process.scheduler;
+package com.group.myos.process;
 
 import com.group.myos.process.model.Process;
 import org.springframework.stereotype.Component;
