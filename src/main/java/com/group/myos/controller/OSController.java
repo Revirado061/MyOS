@@ -4,7 +4,7 @@ import com.group.myos.process.model.Process;
 import com.group.myos.process.scheduler.ProcessScheduler;
 import com.group.myos.memory.MemoryManager;
 import com.group.myos.filesystem.FileSystem;
-import com.group.myos.device.DeviceManager;
+import com.group.myos.device.manager.DeviceManager;
 import org.springframework.web.bind.annotation.*;
 import java.util.*;
 
@@ -72,20 +72,5 @@ public class OSController {
     @GetMapping("/file")
     public List<String> listFiles() {
         return fileSystem.listDirectory();
-    }
-    
-    // 设备管理API
-    @PostMapping("/device/request")
-    public boolean requestDevice(
-        @RequestParam Long processId,
-        @RequestParam String deviceName
-    ) {
-        Process process = processScheduler.getCurrentProcess();
-        return deviceManager.requestDevice(process, deviceName);
-    }
-    
-    @GetMapping("/device/available")
-    public List<DeviceManager.Device> getAvailableDevices() {
-        return deviceManager.getAvailableDevices();
     }
 } 
