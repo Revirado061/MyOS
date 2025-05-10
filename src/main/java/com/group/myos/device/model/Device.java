@@ -1,7 +1,5 @@
 package com.group.myos.device.model;
 
-import java.time.LocalDateTime;
-
 /**
  * 设备模型，定义设备的基本属性和状态。
  */

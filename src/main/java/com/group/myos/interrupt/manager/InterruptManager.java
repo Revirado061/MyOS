@@ -1,7 +1,7 @@
 package com.group.myos.interrupt.manager;
 
-import com.group.myos.interrupt.model.InterruptType;
 import com.group.myos.interrupt.handler.InterruptHandler;
+import com.group.myos.interrupt.model.InterruptType;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;

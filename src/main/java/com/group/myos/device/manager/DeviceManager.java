@@ -1,9 +1,11 @@
 package com.group.myos.device.manager;
 
-import com.group.myos.device.model.*;
+import com.group.myos.device.model.Device;
+import com.group.myos.device.model.DeviceStatus;
+import com.group.myos.device.model.DeviceType;
 import com.group.myos.interrupt.manager.InterruptManager;
-import com.group.myos.timer.TimerManager;
 import com.group.myos.interrupt.model.InterruptType;
+import com.group.myos.timer.TimerManager;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;

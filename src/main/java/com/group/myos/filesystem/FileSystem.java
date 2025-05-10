@@ -1,5 +1,8 @@
 package com.group.myos.filesystem;
 
+import com.group.myos.memory.MemoryManager;
+import com.group.myos.filesystem.model.Directory;
+import com.group.myos.filesystem.model.File;
 import lombok.Data;
 import org.springframework.stereotype.Component;
 import java.util.*;
@@ -8,95 +11,108 @@ import java.util.*;
 public class FileSystem {
     private final Directory root;
     private Directory currentDirectory;
-    
-    public FileSystem() {
+    private final MemoryManager memoryManager;
+
+    public FileSystem(MemoryManager memoryManager) {
         this.root = new Directory("/", null);
         this.currentDirectory = root;
+        this.memoryManager = memoryManager;
     }
-    
-    public boolean createFile(String name, int size) {
-        if (currentDirectory.files.containsKey(name)) {
+
+    public boolean createFile(String name) {
+        if (currentDirectory.getFiles().containsKey(name)) {
             return false;
         }
-        
-        File file = new File(name, size);
-        currentDirectory.files.put(name, file);
+        File file = new File(name);
+        currentDirectory.getFiles().put(name, file);
         return true;
     }
-    
+
     public boolean createDirectory(String name) {
-        if (currentDirectory.subdirectories.containsKey(name)) {
+        if (currentDirectory.getSubdirectories().containsKey(name)) {
             return false;
         }
-        
         Directory dir = new Directory(name, currentDirectory);
-        currentDirectory.subdirectories.put(name, dir);
+        currentDirectory.getSubdirectories().put(name, dir);
         return true;
     }
-    
+
     public boolean deleteFile(String name) {
-        return currentDirectory.files.remove(name) != null;
+        File file = currentDirectory.getFiles().remove(name);
+        if (file != null) {
+            memoryManager.freeMemoryForFile(file);
+            return true;
+        }
+        return false;
     }
-    
+
     public boolean deleteDirectory(String name) {
-        return currentDirectory.subdirectories.remove(name) != null;
+        return currentDirectory.getSubdirectories().remove(name) != null;
     }
-    
+
     public boolean changeDirectory(String path) {
         if (path.equals("/")) {
             currentDirectory = root;
             return true;
         }
-        
+
         if (path.equals("..")) {
-            if (currentDirectory.parent != null) {
-                currentDirectory = currentDirectory.parent;
+            if (currentDirectory.getParent() != null) {
+                currentDirectory = currentDirectory.getParent();
                 return true;
             }
             return false;
         }
-        
-        Directory dir = currentDirectory.subdirectories.get(path);
+
+        Directory dir = currentDirectory.getSubdirectories().get(path);
         if (dir != null) {
             currentDirectory = dir;
             return true;
         }
-        
+
         return false;
     }
-    
+
     public List<String> listDirectory() {
         List<String> contents = new ArrayList<>();
-        contents.addAll(currentDirectory.files.keySet());
-        contents.addAll(currentDirectory.subdirectories.keySet());
+        contents.addAll(currentDirectory.getFiles().keySet());
+        contents.addAll(currentDirectory.getSubdirectories().keySet());
         return contents;
     }
-    
-    @Data
-    public static class File {
-        private final String name;
-        private final int size;
-        private byte[] content;
-        
-        public File(String name, int size) {
-            this.name = name;
-            this.size = size;
-            this.content = new byte[size];
-        }
+
+    public List<File> getFiles() {
+        return new ArrayList<>(currentDirectory.getFiles().values());
     }
-    
-    @Data
-    public static class Directory {
-        private final String name;
-        private final Directory parent;
-        private final Map<String, File> files;
-        private final Map<String, Directory> subdirectories;
-        
-        public Directory(String name, Directory parent) {
-            this.name = name;
-            this.parent = parent;
-            this.files = new HashMap<>();
-            this.subdirectories = new HashMap<>();
+
+    public String readFileContent(String name) {
+        File file = currentDirectory.getFiles().get(name);
+        if (file != null && file.getContent() != null) {
+            return new String(file.getContent());
         }
+        return null; // 如果文件不存在或内容为空，返回 null
     }
-} 
+
+    public boolean writeFileContent(String name, String content) {
+        File file = currentDirectory.getFiles().get(name);
+        if (file != null) {
+            // 先释放原有内容占用的内存
+            memoryManager.freeMemoryForFile(file);
+            // 再尝试为新内容分配内存
+            int newSize = content.getBytes().length;
+            if (!memoryManager.allocateMemoryForFile(file, newSize)) {
+                return false;
+            }
+            file.setContent(content.toCharArray()); // 确保内容被正确赋值
+            file.setSize(file.calculateByteCount(content));
+            return true;
+        }
+        return false;
+    }
+
+    public Map<String, Object> getDirectoryContent() {
+        Map<String, Object> result = new HashMap<>();
+        result.put("files", new ArrayList<>(currentDirectory.getFiles().values()));
+        result.put("directories", new ArrayList<>(currentDirectory.getSubdirectories().keySet()));
+        return result;
+    }
+}

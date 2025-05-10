@@ -3,12 +3,11 @@ package com.group.myos.timer;
 import com.group.myos.device.manager.DeviceManager;
 import com.group.myos.interrupt.manager.InterruptManager;
 import com.group.myos.interrupt.model.InterruptType;
-
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import jakarta.annotation.PostConstruct;
-import jakarta.annotation.PreDestroy;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;

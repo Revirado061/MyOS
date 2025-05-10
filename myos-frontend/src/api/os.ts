@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 const api = axios.create({
-  baseURL: 'http://localhost:8080/api/os'
+  baseURL: 'http://localhost:8080/'
 })
 
 export interface Process {
@@ -31,6 +31,17 @@ export interface File {
   size: number
   createTime?: string
   lastModified?: string
+}
+
+export interface Directory {
+  name: string
+  createTime?: string
+  lastModified?: string
+}
+
+interface FileSystemResponse {
+  files: File[]
+  directories: string[]
 }
 
 export const osApi = {
@@ -75,14 +86,14 @@ export const osApi = {
   },
   
   // 文件系统
-  createFile(name: string, size: number) {
+  createFile(name: string) {
     return api.post<boolean>('/file', null, {
-      params: { name, size }
+      params: { name }
     })
   },
   
   listFiles() {
-    return api.get<File[]>('/file')
+    return api.get<FileSystemResponse>('/file')
   },
 
   deleteFile(name: string) {
@@ -94,7 +105,9 @@ export const osApi = {
   },
 
   writeFile(name: string, content: string) {
-    return api.post<boolean>(`/file/${name}/content`, content)
+    return api.post<boolean>(`/file/${name}/content`, content, {
+      headers: { 'Content-Type': 'text/plain' }
+    })
   },
   
   // 设备管理
@@ -112,5 +125,19 @@ export const osApi = {
     return api.post<boolean>('/device/release', null, {
       params: { deviceName }
     })
+  },
+
+  createDirectory(name: string) {
+    return api.post<boolean>('/file/directory', null, {
+      params: { name }
+    })
+  },
+
+  deleteDirectory(name: string) {
+    return api.delete(`/file/directory/${name}`)
+  },
+
+  changeDirectory(name: string) {
+    return api.post('/file/change-directory', null, { params: { name } })
   }
 } 

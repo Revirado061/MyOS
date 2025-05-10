@@ -2,7 +2,10 @@ package com.group.myos.interrupt.controller;
 
 import com.group.myos.interrupt.manager.InterruptManager;
 import com.group.myos.interrupt.model.InterruptType;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/interrupt")

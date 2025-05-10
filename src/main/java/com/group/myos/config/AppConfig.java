@@ -4,10 +4,8 @@ import com.group.myos.device.manager.DeviceManager;
 import com.group.myos.interrupt.handler.InterruptHandler;
 import com.group.myos.interrupt.manager.InterruptManager;
 import com.group.myos.interrupt.model.InterruptType;
-
-import org.springframework.context.annotation.Configuration;
-
 import jakarta.annotation.PostConstruct;
+import org.springframework.context.annotation.Configuration;
 
 /**
  * Spring Boot 配置类，注册 Bean 并初始化中断处理程序。
