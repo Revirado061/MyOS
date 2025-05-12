@@ -96,8 +96,8 @@ const fetchData = async () => {
     
     processCount.value = processes.data.length
     freeMemory.value = memory.data.reduce((sum, block) => sum + block.size, 0)
-    fileCount.value = files.data.length
-    availableDevices.value = devices.data.length
+    fileCount.value = files.data.files.length
+    availableDevices.value = devices.data.data.length
   } catch (error) {
     console.error('Error fetching data:', error)
   }

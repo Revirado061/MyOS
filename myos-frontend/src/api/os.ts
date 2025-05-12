@@ -4,6 +4,40 @@ const api = axios.create({
   baseURL: 'http://localhost:8080/'
 })
 
+// 设备类型枚举
+export enum DeviceType {
+  PRINTER = 'PRINTER',    // 打印机
+  DISK = 'DISK',         // 磁盘
+  KEYBOARD = 'KEYBOARD', // 键盘
+  MOUSE = 'MOUSE',       // 鼠标
+  USB = 'USB',          // USB设备
+  OTHER = 'OTHER'        // 其他设备
+}
+
+// 设备状态枚举
+export enum DeviceStatus {
+  IDLE = 'IDLE',   // 空闲
+  BUSY = 'BUSY',   // 忙碌
+  ERROR = 'ERROR'  // 错误
+}
+
+// 设备类型显示名称映射
+export const DeviceTypeNames: Record<DeviceType, string> = {
+  [DeviceType.PRINTER]: '打印机',
+  [DeviceType.DISK]: '磁盘',
+  [DeviceType.KEYBOARD]: '键盘',
+  [DeviceType.MOUSE]: '鼠标',
+  [DeviceType.USB]: 'USB设备',
+  [DeviceType.OTHER]: '其他设备'
+}
+
+// 设备状态显示名称映射
+export const DeviceStatusNames: Record<DeviceStatus, string> = {
+  [DeviceStatus.IDLE]: '空闲',
+  [DeviceStatus.BUSY]: '忙碌',
+  [DeviceStatus.ERROR]: '错误'
+}
+
 export interface Process {
   id?: number
   name: string
@@ -21,9 +55,13 @@ export interface MemoryBlock {
 }
 
 export interface Device {
+  id: number
   name: string
-  type: string
-  currentProcess: Process | null
+  type: DeviceType
+  status: DeviceStatus
+  currentProcessId: number | null
+  remainingTime: number
+  waitQueue: number[]
 }
 
 export interface File {
@@ -42,6 +80,12 @@ export interface Directory {
 interface FileSystemResponse {
   files: File[]
   directories: string[]
+}
+
+interface ApiResponse<T> {
+  status: string
+  message: string
+  data: T
 }
 
 export const osApi = {
@@ -111,20 +155,35 @@ export const osApi = {
   },
   
   // 设备管理
-  requestDevice(processId: number, deviceName: string) {
-    return api.post<boolean>('/device/request', null, {
-      params: { processId, deviceName }
-    })
-  },
-  
-  getAvailableDevices() {
-    return api.get<Device[]>('/device/available')
+  getAllDevices() {
+    return api.get<ApiResponse<Device[]>>('/api/devices')
   },
 
-  releaseDevice(deviceName: string) {
-    return api.post<boolean>('/device/release', null, {
-      params: { deviceName }
+  getDevice(id: number) {
+    return api.get<ApiResponse<Device>>(`/api/devices/${id}`)
+  },
+
+  getDevicesByType(type: DeviceType) {
+    return api.get<ApiResponse<Device[]>>(`/api/devices/type/${type}`)
+  },
+
+  getAvailableDevices() {
+    return api.get<ApiResponse<Device[]>>('/api/devices/available')
+  },
+
+  allocateDevice(deviceId: number, processId: number, taskDuration: number) {
+    return api.post<ApiResponse<Device>>(`/api/devices/${deviceId}/request`, {
+      processId,
+      taskDuration
     })
+  },
+
+  releaseDevice(deviceId: number) {
+    return api.post<ApiResponse<Device>>(`/api/devices/${deviceId}/release`)
+  },
+
+  simulateDeviceInterrupt(deviceId: number) {
+    return api.post<ApiResponse<Device>>(`/api/devices/${deviceId}/interrupt`)
   },
 
   createDirectory(name: string) {
