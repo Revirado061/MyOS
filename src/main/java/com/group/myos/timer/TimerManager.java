@@ -1,59 +1,63 @@
 package com.group.myos.timer;
 
-import com.group.myos.device.manager.DeviceManager;
-import com.group.myos.interrupt.manager.InterruptManager;
-import com.group.myos.interrupt.model.InterruptType;
-import jakarta.annotation.PostConstruct;
-import jakarta.annotation.PreDestroy;
+import com.group.myos.device.event.DeviceTimeoutEvent;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-
 /**
- * 简化的时钟管理器，仅用于触发时钟中断以支持测试。
+ * 系统时钟管理器
+ * 负责系统时钟的启动、停止和定时任务调度
  */
+@Slf4j
 @Component
 public class TimerManager {
-    private volatile long systemTime = 0; // 系统时间
-    private static final long TIME_SLICE = 100; // 时间片，100ms
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+    private volatile boolean running = false;
+    private long currentTime = 0;
+
     @Autowired
-    private InterruptManager interruptManager;
-    @Autowired
-    private DeviceManager deviceManager;
+    private ApplicationEventPublisher eventPublisher;
 
     /**
-     * 启动时钟，定时触发时钟中断。
+     * 启动系统时钟
      */
-    @PostConstruct
-    public void startSystemClock() {
-        scheduler.scheduleAtFixedRate(() -> {
-            systemTime++; // 系统时间递增
-            // 触发时钟中断（0号中断）
-            interruptManager.triggerInterrupt(0, InterruptType.TIMER, null, null);
-            // 检查设备超时
-            deviceManager.checkTimeouts(systemTime);
-        }, 0, TIME_SLICE, TimeUnit.MILLISECONDS);
-        System.out.println("时钟启动，时间片 " + TIME_SLICE + "ms");
+    public void start() {
+        if (!running) {
+            running = true;
+            currentTime = 0;
+            log.info("系统时钟已启动");
+        }
     }
 
     /**
-     * 停止时钟。
+     * 停止系统时钟
      */
-    @PreDestroy
-    public void stopSystemClock() {
-        scheduler.shutdown();
-        System.out.println("时钟停止");
+    public void stop() {
+        running = false;
+        log.info("系统时钟已停止");
     }
 
     /**
-     * 获取当前系统时间。
-     * @return 系统时间
+     * 获取当前系统时间
      */
-    public long getSystemTime() {
-        return systemTime;
+    public long getCurrentTime() {
+        return currentTime;
+    }
+
+    /**
+     * 系统时钟滴答
+     * 每秒执行一次
+     */
+    @Scheduled(fixedRate = 1000)
+    public void tick() {
+        if (running) {
+            currentTime++;
+            log.debug("系统时钟: {}", currentTime);
+            
+            // 发布设备超时检查事件
+            eventPublisher.publishEvent(new DeviceTimeoutEvent(this, currentTime));
+        }
     }
 }

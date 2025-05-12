@@ -3,7 +3,6 @@ package com.group.myos.filesystem;
 import com.group.myos.memory.MemoryManager;
 import com.group.myos.filesystem.model.Directory;
 import com.group.myos.filesystem.model.File;
-import lombok.Data;
 import org.springframework.stereotype.Component;
 import java.util.*;
 

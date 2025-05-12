@@ -1,87 +1,188 @@
 package com.group.myos.interrupt.manager;
 
-import com.group.myos.interrupt.handler.InterruptHandler;
+import com.group.myos.interrupt.model.Interrupt;
+import com.group.myos.interrupt.model.InterruptLog;
 import com.group.myos.interrupt.model.InterruptType;
+import com.group.myos.interrupt.event.InterruptTriggeredEvent;
+import com.group.myos.interrupt.event.InterruptHandledEvent;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 
 /**
- * 中断管理器，负责中断的注册、触发和处理。
+ * 中断管理器
+ * 负责中断的注册、触发、处理和日志记录
  */
 @Component
 public class InterruptManager {
-    // 中断向量表，存储中断号与处理程序的映射
-    private final Map<Integer, InterruptHandler> interruptVector = new ConcurrentHashMap<>();
-    // 中断优先级表，存储中断号与优先级的映射
-    private final Map<Integer, Integer> interruptPriorities = new ConcurrentHashMap<>();
-    // 中断启用状态
-    private volatile boolean interruptEnabled = true;
+    private final Queue<Interrupt> interruptQueue = new ConcurrentLinkedQueue<>();
+    private final List<InterruptLog> interruptLogs = new CopyOnWriteArrayList<>();
+    private final AtomicLong interruptIdGenerator = new AtomicLong(0);
+    private final AtomicLong logIdGenerator = new AtomicLong(0);
+
+    @Autowired
+    private ApplicationEventPublisher eventPublisher;
 
     /**
-     * 注册中断处理程序。
-     * @param vector 中断号
-     * @param handler 中断处理程序
-     * @param priority 中断优先级（0最高）
-     */
-    public void registerInterrupt(int vector, InterruptHandler handler, int priority) {
-        interruptVector.put(vector, handler);
-        interruptPriorities.put(vector, priority);
-        System.out.println("注册中断 " + vector + "，优先级 " + priority);
-    }
-
-    /**
-     * 触发中断。
-     * @param vector 中断号
+     * 触发中断
+     * @param vector 中断向量号
      * @param type 中断类型
      * @param processId 相关进程ID
-     * @param data 额外数据
+     * @param data 中断数据
      */
-    public void triggerInterrupt(int vector, InterruptType type, Long processId, Object data) {
-        if (!interruptEnabled) {
-            System.out.println("中断已禁用，忽略中断 " + vector);
-            return;
+    public void triggerInterrupt(int vector, InterruptType type, Long processId, String data) {
+        Map<String, Object> metadata = new HashMap<>();
+        if (processId != null) {
+            metadata.put("processId", processId);
+        }
+        if (data != null) {
+            metadata.put("data", data);
         }
 
-        InterruptHandler handler = interruptVector.get(vector);
-        if (handler != null) {
-            // 模拟保存上下文
-            saveContext();
+        Interrupt interrupt = new Interrupt(
+            interruptIdGenerator.incrementAndGet(),
+            type,
+            System.currentTimeMillis(),
+            metadata,
+            generateMessage(type, processId, data)
+        );
+        
+        interruptQueue.offer(interrupt);
+        addLog(interrupt);
+        
+        // 发布中断触发事件
+        eventPublisher.publishEvent(new InterruptTriggeredEvent(interrupt));
+    }
 
-            try {
-                // 执行中断处理程序
-                handler.handleInterrupt(type, processId, data);
-                System.out.println("处理中断 " + vector + "，类型 " + type);
-            } finally {
-                // 模拟恢复上下文
-                restoreContext();
-            }
-        } else {
-            System.out.println("未找到中断 " + vector + " 的处理程序");
+    /**
+     * 处理中断
+     * 定时任务，每100ms执行一次
+     */
+    @Scheduled(fixedRate = 100)
+    public void handleInterrupts() {
+        Interrupt interrupt = interruptQueue.poll();
+        if (interrupt != null) {
+            String result = processInterrupt(interrupt);
+            updateLog(interrupt.getId(), result);
+            
+            // 发布中断处理事件
+            eventPublisher.publishEvent(new InterruptHandledEvent(interrupt, result));
         }
     }
 
     /**
-     * 启用或禁用中断。
-     * @param enabled 是否启用
+     * 处理中断的具体逻辑
+     * @param interrupt 中断对象
+     * @return 处理结果
      */
-    public void setInterruptEnabled(boolean enabled) {
-        this.interruptEnabled = enabled;
-        System.out.println("中断状态设置为 " + (enabled ? "启用" : "禁用"));
+    private String processInterrupt(Interrupt interrupt) {
+        switch (interrupt.getType()) {
+            case CLOCK:
+                return "时钟中断处理完成";
+            case DEVICE:
+                return "设备中断处理完成";
+            case IO:
+                return "I/O中断处理完成";
+            case PROCESS:
+                return "进程中断处理完成";
+            case OTHER:
+                return "其他中断处理完成";
+            default:
+                return "未知中断类型";
+        }
     }
 
     /**
-     * 模拟保存上下文。
+     * 获取中断日志
+     * @param limit 返回的最大日志数量
+     * @param type 中断类型过滤
+     * @return 中断日志列表
      */
-    private void saveContext() {
-        System.out.println("保存当前上下文");
+    public List<InterruptLog> getInterruptLogs(int limit, InterruptType type) {
+        return interruptLogs.stream()
+            .filter(log -> type == null || log.getType() == type)
+            .limit(limit)
+            .collect(Collectors.toList());
     }
 
     /**
-     * 模拟恢复上下文。
+     * 获取当前中断队列
+     * @return 中断队列的副本
      */
-    private void restoreContext() {
-        System.out.println("恢复上下文");
+    public List<Interrupt> getInterruptQueue() {
+        return List.copyOf(interruptQueue);
+    }
+
+    /**
+     * 添加中断日志
+     * @param interrupt 中断对象
+     */
+    private void addLog(Interrupt interrupt) {
+        InterruptLog log = new InterruptLog(
+            logIdGenerator.incrementAndGet(),
+            interrupt.getId(),
+            interrupt.getType(),
+            interrupt.getTimestamp(),
+            interrupt.getMessage(),
+            "待处理"
+        );
+        interruptLogs.add(log);
+        
+        // 保持日志数量不超过100条
+        if (interruptLogs.size() > 100) {
+            interruptLogs.remove(0);
+        }
+    }
+
+    /**
+     * 更新中断日志的处理结果
+     * @param interruptId 中断ID
+     * @param result 处理结果
+     */
+    private void updateLog(Long interruptId, String result) {
+        interruptLogs.stream()
+            .filter(log -> log.getInterruptId().equals(interruptId))
+            .findFirst()
+            .ifPresent(log -> log.setResult(result));
+    }
+
+    /**
+     * 生成中断消息
+     * @param type 中断类型
+     * @param processId 进程ID
+     * @param data 中断数据
+     * @return 格式化的消息字符串
+     */
+    private String generateMessage(InterruptType type, Long processId, String data) {
+        StringBuilder message = new StringBuilder();
+        message.append("中断类型: ").append(type);
+        if (processId != null) {
+            message.append(", 进程ID: ").append(processId);
+        }
+        if (data != null) {
+            message.append(", 数据: ").append(data);
+        }
+        return message.toString();
+    }
+
+    /**
+     * 重置中断管理器
+     * 清空中断队列和日志
+     */
+    public void reset() {
+        interruptQueue.clear();
+        interruptLogs.clear();
+        interruptIdGenerator.set(0);
+        logIdGenerator.set(0);
     }
 }

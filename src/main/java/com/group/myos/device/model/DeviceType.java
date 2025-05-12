@@ -6,5 +6,8 @@ package com.group.myos.device.model;
 public enum DeviceType {
     PRINTER,    // 打印机
     DISK,       // 磁盘
-    TAPE        // 磁带
+    KEYBOARD,   // 键盘
+    MOUSE,      // 鼠标
+    USB,        // USB设备
+    OTHER       // 其他设备
 }
