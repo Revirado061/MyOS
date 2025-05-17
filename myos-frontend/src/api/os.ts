@@ -21,6 +21,15 @@ export enum DeviceStatus {
   ERROR = 'ERROR'  // 错误
 }
 
+// 进程状态枚举
+export enum ProcessState {
+  NEW = 'NEW',           // 新建
+  READY = 'READY',       // 就绪
+  RUNNING = 'RUNNING',   // 运行中
+  WAITING = 'WAITING',   // 等待
+  TERMINATED = 'TERMINATED'  // 终止
+}
+
 // 设备类型显示名称映射
 export const DeviceTypeNames: Record<DeviceType, string> = {
   [DeviceType.PRINTER]: '打印机',
@@ -38,6 +47,24 @@ export const DeviceStatusNames: Record<DeviceStatus, string> = {
   [DeviceStatus.ERROR]: '错误'
 }
 
+// 进程状态显示名称映射
+export const ProcessStateNames: Record<ProcessState, string> = {
+  [ProcessState.NEW]: '新建',
+  [ProcessState.READY]: '就绪',
+  [ProcessState.RUNNING]: '运行中',
+  [ProcessState.WAITING]: '等待',
+  [ProcessState.TERMINATED]: '终止'
+}
+
+// 进程状态对应的标签类型
+export const ProcessStateTagTypes: Record<ProcessState, string> = {
+  [ProcessState.NEW]: 'info',
+  [ProcessState.READY]: 'warning',
+  [ProcessState.RUNNING]: 'success',
+  [ProcessState.WAITING]: 'danger',
+  [ProcessState.TERMINATED]: 'info'
+}
+
 export interface Process {
   id?: number
   name: string
@@ -46,6 +73,8 @@ export interface Process {
   memorySize: number
   createTime?: string
   lastUpdateTime?: string
+  inMemory?: boolean
+  swapFilePath?: string
 }
 
 export interface MemoryBlock {
@@ -98,6 +127,22 @@ export const osApi = {
     return api.get<Process[]>('/process')
   },
   
+  getReadyProcesses() {
+    return api.get<Process[]>('/process/ready')
+  },
+  
+  getWaitingProcesses() {
+    return api.get<Process[]>('/process/waiting')
+  },
+  
+  getTerminatedProcesses() {
+    return api.get<Process[]>('/process/terminated')
+  },
+  
+  getSwappedProcesses() {
+    return api.get<Process[]>('/process/swapped')
+  },
+  
   getCurrentProcess() {
     return api.get<Process>('/process/current')
   },
@@ -110,6 +155,30 @@ export const osApi = {
     return api.put(`/process/${id}/state`, null, {
       params: { state }
     })
+  },
+  
+  scheduleNextProcess() {
+    return api.post<Process>('/process/schedule')
+  },
+  
+  blockProcess(id: number) {
+    return api.post(`/process/${id}/block`)
+  },
+  
+  wakeUpProcess(id: number) {
+    return api.post(`/process/${id}/wakeup`)
+  },
+  
+  terminateProcess(id: number) {
+    return api.post(`/process/${id}/terminate`)
+  },
+  
+  swapInProcess(id: number) {
+    return api.post(`/process/${id}/swapin`)
+  },
+  
+  swapOutProcess(id: number) {
+    return api.post(`/process/${id}/swapout`)
   },
   
   // 内存管理

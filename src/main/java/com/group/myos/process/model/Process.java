@@ -21,17 +21,20 @@ public class Process {
     private Integer memorySize;
     private LocalDateTime createTime;
     private LocalDateTime lastUpdateTime;
+    private boolean inMemory; // 是否在内存中，用于交换机制
+    private String swapFilePath; // 交换文件路径
 
     public enum ProcessState {
-        NEW,
-        READY,
-        RUNNING,
-        WAITING,
-        TERMINATED
+        NEW,        // 新建
+        READY,      // 就绪
+        RUNNING,    // 运行
+        WAITING,    // 等待/阻塞
+        TERMINATED  // 终止
     }
 
     // 无参构造函数
     public Process() {
+        this.inMemory = true; // 默认进程在内存中
     }
 
     // 包含 id 的构造函数
@@ -43,6 +46,7 @@ public class Process {
         this.memorySize = memorySize;
         this.createTime = LocalDateTime.now(); // 设置创建时间为当前时间
         this.lastUpdateTime = LocalDateTime.now(); // 设置最后更新时间为当前时间
+        this.inMemory = true; // 默认进程在内存中
     }
 
 }
