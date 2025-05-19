@@ -2,7 +2,7 @@ package com.group.myos.device.event;
 
 import lombok.Getter;
 import org.springframework.context.ApplicationEvent;
-
+// 事件定义（DeviceTimeoutEvent）
 /**
  * 设备超时事件
  * 用于通知设备管理器检查设备超时

@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/interrupts")
+@RequestMapping("/interrupts")
 public class InterruptController {
     private final InterruptManager interruptManager;
 
@@ -24,16 +24,18 @@ public class InterruptController {
         try {
             String typeStr = (String) request.get("type");
             InterruptType type = InterruptType.valueOf(typeStr);
-            Map<String, Object> data = (Map<String, Object>) request.get("data");
             String message = (String) request.get("message");
+            Long deviceId = request.get("deviceId") != null ? 
+                Long.valueOf(request.get("deviceId").toString()) : null;
 
-            interruptManager.triggerInterrupt(1, type, null, message);
+            interruptManager.triggerInterrupt(1, type, deviceId, message);
             
             return ResponseEntity.ok(Map.of(
                 "status", "success",
                 "message", "中断已触发",
                 "data", Map.of(
                     "type", type,
+                    "deviceId", deviceId,
                     "message", message
                 )
             ));
