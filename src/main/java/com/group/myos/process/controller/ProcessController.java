@@ -2,7 +2,6 @@ package com.group.myos.process.controller;
 
 import com.group.myos.process.model.Process;
 import com.group.myos.process.ProcessScheduler;
-import com.group.myos.process.ProcessSwapper;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 

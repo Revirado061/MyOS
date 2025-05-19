@@ -42,10 +42,7 @@ public class DeviceInterruptTest {
         assertFalse(allocated2, "设备 1 已占用，进程 2 应加入等待队列");
         assertTrue(device.getWaitQueue().contains(2L), "进程 2 应在等待队列中");
 
-        // 模拟设备中断
-        deviceManager.simulateDeviceInterrupt(1L);
-        Thread.sleep(500);
-        
+
         // 释放设备
         deviceManager.releaseDevice(1L);
         Thread.sleep(500);

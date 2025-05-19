@@ -10,11 +10,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
@@ -25,10 +21,14 @@ import java.util.stream.Collectors;
  */
 @Component
 public class InterruptManager {
-    private final Queue<Interrupt> interruptQueue = new ConcurrentLinkedQueue<>();
+    // 使用优先级队列，根据中断类型优先级排序
+    private final PriorityQueue<Interrupt> interruptQueue = new PriorityQueue<>(
+        Comparator.comparingInt(interrupt -> interrupt.getType().getPriority())
+    );
     private final List<InterruptLog> interruptLogs = new CopyOnWriteArrayList<>();
     private final AtomicLong interruptIdGenerator = new AtomicLong(0);
     private final AtomicLong logIdGenerator = new AtomicLong(0);
+    private static final long PROCESSING_DELAY = 3000; // 中断处理延迟3秒
 
     @Autowired
     private ApplicationEventPublisher eventPublisher;
@@ -48,7 +48,7 @@ public class InterruptManager {
         if (data != null) {
             metadata.put("data", data);
         }
-
+        // 1. 创建中断对象
         Interrupt interrupt = new Interrupt(
             interruptIdGenerator.incrementAndGet(),
             type,
@@ -57,10 +57,11 @@ public class InterruptManager {
             generateMessage(type, processId, data)
         );
         
+        // 2. 加入中断队列
         interruptQueue.offer(interrupt);
         addLog(interrupt);
         
-        // 发布中断触发事件
+        // 3. 发布中断触发事件
         eventPublisher.publishEvent(new InterruptTriggeredEvent(interrupt));
     }
 
@@ -70,13 +71,23 @@ public class InterruptManager {
      */
     @Scheduled(fixedRate = 100)
     public void handleInterrupts() {
-        Interrupt interrupt = interruptQueue.poll();
+        Interrupt interrupt = interruptQueue.peek(); // 只查看不移除
         if (interrupt != null) {
-            String result = processInterrupt(interrupt);
-            updateLog(interrupt.getId(), result);
-            
-            // 发布中断处理事件
-            eventPublisher.publishEvent(new InterruptHandledEvent(interrupt, result));
+            long currentTime = System.currentTimeMillis();
+            // 如果中断在队列中超过延迟时间，则处理它
+            if (currentTime - interrupt.getTimestamp() >= PROCESSING_DELAY) {
+                interrupt = interruptQueue.poll(); // 现在移除它
+                if (interrupt != null) {
+                    // 1. 处理中断
+                    String result = processInterrupt(interrupt);
+                    
+                    // 2. 记录处理结果
+                    updateLog(interrupt.getId(), result);
+                    
+                    // 3. 发布处理完成事件
+                    eventPublisher.publishEvent(new InterruptHandledEvent(interrupt, result));
+                }
+            }
         }
     }
 
@@ -87,16 +98,18 @@ public class InterruptManager {
      */
     private String processInterrupt(Interrupt interrupt) {
         switch (interrupt.getType()) {
-            case CLOCK:
-                return "时钟中断处理完成";
+            case ERROR:
+                return String.format("错误中断处理完成，优先级: %d", interrupt.getType().getPriority());
             case DEVICE:
-                return "设备中断处理完成";
+                return String.format("设备中断处理完成，优先级: %d", interrupt.getType().getPriority());
             case IO:
-                return "I/O中断处理完成";
+                return String.format("I/O中断处理完成，优先级: %d", interrupt.getType().getPriority());
             case PROCESS:
-                return "进程中断处理完成";
+                return String.format("进程中断处理完成，优先级: %d", interrupt.getType().getPriority());
+            case CLOCK:
+                return String.format("时钟中断处理完成，优先级: %d", interrupt.getType().getPriority());
             case OTHER:
-                return "其他中断处理完成";
+                return String.format("其他中断处理完成，优先级: %d", interrupt.getType().getPriority());
             default:
                 return "未知中断类型";
         }
@@ -120,7 +133,7 @@ public class InterruptManager {
      * @return 中断队列的副本
      */
     public List<Interrupt> getInterruptQueue() {
-        return List.copyOf(interruptQueue);
+        return new ArrayList<>(interruptQueue);
     }
 
     /**
@@ -166,6 +179,7 @@ public class InterruptManager {
     private String generateMessage(InterruptType type, Long processId, String data) {
         StringBuilder message = new StringBuilder();
         message.append("中断类型: ").append(type);
+        message.append(" (优先级: ").append(type.getPriority()).append(")");
         if (processId != null) {
             message.append(", 进程ID: ").append(processId);
         }
