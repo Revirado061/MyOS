@@ -36,14 +36,14 @@ public class FileSystem {
         return true;
     }
 
-    public boolean deleteFile(String name) {
-        File file = currentDirectory.getFiles().remove(name);
-        if (file != null) {
-            memoryManager.freeMemoryForFile(file);
-            return true;
-        }
-        return false;
-    }
+//    public boolean deleteFile(String name) {
+//        File file = currentDirectory.getFiles().remove(name);
+//        if (file != null) {
+//            memoryManager.freeMemoryForFile(file);
+//            return true;
+//        }
+//        return false;
+//    }
 
     public boolean deleteDirectory(String name) {
         return currentDirectory.getSubdirectories().remove(name) != null;
@@ -91,22 +91,22 @@ public class FileSystem {
         return null; // 如果文件不存在或内容为空，返回 null
     }
 
-    public boolean writeFileContent(String name, String content) {
-        File file = currentDirectory.getFiles().get(name);
-        if (file != null) {
-            // 先释放原有内容占用的内存
-            memoryManager.freeMemoryForFile(file);
-            // 再尝试为新内容分配内存
-            int newSize = content.getBytes().length;
-            if (!memoryManager.allocateMemoryForFile(file, newSize)) {
-                return false;
-            }
-            file.setContent(content.toCharArray()); // 确保内容被正确赋值
-            file.setSize(file.calculateByteCount(content));
-            return true;
-        }
-        return false;
-    }
+//    public boolean writeFileContent(String name, String content) {
+//        File file = currentDirectory.getFiles().get(name);
+//        if (file != null) {
+//            // 先释放原有内容占用的内存
+//            memoryManager.freeMemoryForFile(file);
+//            // 再尝试为新内容分配内存
+//            int newSize = content.getBytes().length;
+//            if (!memoryManager.allocateMemoryForFile(file, newSize)) {
+//                return false;
+//            }
+//            file.setContent(content.toCharArray()); // 确保内容被正确赋值
+//            file.setSize(file.calculateByteCount(content));
+//            return true;
+//        }
+//        return false;
+//    }
 
     public Map<String, Object> getDirectoryContent() {
         Map<String, Object> result = new HashMap<>();

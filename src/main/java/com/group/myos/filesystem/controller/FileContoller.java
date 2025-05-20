@@ -24,13 +24,13 @@ public class FileContoller {
         return result;
     }
 
-    @DeleteMapping("{name}")
-    public boolean deleteFile(@PathVariable String name) {
-        logger.info("Deleting file: {}", name);
-        boolean result = fileSystem.deleteFile(name);
-        logger.info("File deletion result: {}", result);
-        return result;
-    }
+//    @DeleteMapping("{name}")
+//    public boolean deleteFile(@PathVariable String name) {
+//        logger.info("Deleting file: {}", name);
+//        boolean result = fileSystem.deleteFile(name);
+//        logger.info("File deletion result: {}", result);
+//        return result;
+//    }
 
     @GetMapping("")
     public Map<String, Object> listFiles() {
@@ -44,13 +44,13 @@ public class FileContoller {
         return fileSystem.readFileContent(name);
     }
 
-    @PostMapping("{name}/content")
-    public boolean writeFileContent(@PathVariable String name, @RequestBody String content) {
-        logger.info("Writing content to file: {}", name);
-        boolean result = fileSystem.writeFileContent(name, content);
-        logger.info("File write result: {}", result);
-        return result;
-    }
+//    @PostMapping("{name}/content")
+//    public boolean writeFileContent(@PathVariable String name, @RequestBody String content) {
+//        logger.info("Writing content to file: {}", name);
+//        boolean result = fileSystem.writeFileContent(name, content);
+//        logger.info("File write result: {}", result);
+//        return result;
+//    }
 
     @PostMapping("directory")
     public boolean createDirectory(@RequestParam String name) {

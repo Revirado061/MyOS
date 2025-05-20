@@ -1,104 +1,137 @@
 package com.group.myos.memory;
 
+import com.group.myos.memory.impl.MemoryManagerImpl;
 import com.group.myos.memory.model.MemoryBlock;
 import com.group.myos.process.model.Process;
-import com.group.myos.memory.impl.MemoryManagerImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
-
 public class MemoryManagerTest {
     private MemoryManager memoryManager;
+    private Process process1;
+    private Process process2;
 
     @BeforeEach
-    public void setUp() {
-        memoryManager = new MemoryManagerImpl(); // 初始化内存管理器
+    void setUp() {
+        memoryManager = new MemoryManagerImpl();
+        process1 = new Process();
+        process1.setId(1L);
+        process1.setName("Process1");
+        process1.setMemorySize(16); // 16MB
+
+        process2 = new Process();
+        process2.setId(2L);
+        process2.setName("Process2");
+        process2.setMemorySize(32); // 32MB
     }
 
     @Test
-    public void testAllocateAndFreeMemoryForProcess() {
-        // 创建进程对象
-        Process process1 = new Process(null, "Process1", 1, Process.ProcessState.NEW, 256);
-        Process process2 = new Process(null, "Process2", 2, Process.ProcessState.NEW, 128);
-
-        // 测试为进程分配内存
-        assertTrue(memoryManager.allocateMemoryForProcess(process1, 256));
-        assertEquals(768, memoryManager.getFreeMemorySize()); // 总内存 1024 - 256 = 768
-
-        // 测试为第二个进程分配内存
-        assertTrue(memoryManager.allocateMemoryForProcess(process2, 128));
-        assertEquals(640, memoryManager.getFreeMemorySize()); // 总内存 1024 - 256 - 128 = 640
-
-        // 测试释放进程占用的内存
-        memoryManager.freeMemoryForProcess(process1);
-        assertEquals(896, memoryManager.getFreeMemorySize()); // 总内存 1024 - 128 = 896
-
-        // 测试释放第二个进程占用的内存
-        memoryManager.freeMemoryForProcess(process2);
-        assertEquals(1024, memoryManager.getFreeMemorySize()); // 总内存 1024
-    }
-
-    @Test
-    public void testGetFreeBlocks() {
-        // 创建进程对象
-        Process process = new Process(null, "Process", 1, Process.ProcessState.NEW, 256);
-
-        // 分配内存
-        assertTrue(memoryManager.allocateMemoryForProcess(process, 256));
-
-        // 获取空闲内存块列表
+    void testInitialMemoryState() {
+        // 测试初始内存状态
         List<MemoryBlock> freeBlocks = memoryManager.getFreeBlocks();
         assertEquals(1, freeBlocks.size());
-        assertEquals(768, freeBlocks.get(0).getSize()); // 总内存 1024 - 256 = 768
-        assertEquals(256, freeBlocks.get(0).getStart()); // 起始地址为 256
+        assertEquals(1024, freeBlocks.get(0).getSize()); // 总内存1024MB
+        assertEquals(0, freeBlocks.get(0).getStart());
+        assertEquals(0.0, memoryManager.getMemoryUsage());
     }
 
     @Test
-    public void testGetAllocatedMemory() {
-        // 创建进程对象
-        Process process = new Process(null, "Process", 1, Process.ProcessState.NEW, 256);
-
-        // 分配内存
-        assertTrue(memoryManager.allocateMemoryForProcess(process, 256));
-
-        // 获取已分配内存的进程映射
-        Map<Process, MemoryBlock> allocatedMemory = memoryManager.getAllocatedMemory();
-        assertEquals(1, allocatedMemory.size());
-        assertEquals(256, allocatedMemory.get(process).getSize());
-        assertEquals(0, allocatedMemory.get(process).getStart());
+    void testMemoryAllocation() {
+        // 测试内存分配
+        assertTrue(memoryManager.allocateMemoryForProcess(process1, 16));
+        assertEquals(1008, memoryManager.getFreeMemorySize()); // 1024 - 16
+        assertTrue(memoryManager.getMemoryUsage() > 0);
     }
 
     @Test
-    public void testMemoryAllocationFailure() {
-        // 创建进程对象
-        Process process = new Process(null, "Process", 1, Process.ProcessState.NEW, 1025);
+    void testMemoryAllocationAndFree() {
+        // 测试内存分配和释放
+        assertTrue(memoryManager.allocateMemoryForProcess(process1, 16));
+        int freeMemoryAfterAllocation = memoryManager.getFreeMemorySize();
+        assertEquals(1008, freeMemoryAfterAllocation);
 
-        // 分配超出总内存大小的内存
-        assertFalse(memoryManager.allocateMemoryForProcess(process, 1025)); // 总内存为 1024
+        memoryManager.freeMemoryForProcess(process1);
+        int freeMemoryAfterFree = memoryManager.getFreeMemorySize();
+
+        assertEquals(1024, freeMemoryAfterFree); // 释放后应该恢复全部内存
+        assertEquals(0.0, memoryManager.getMemoryUsage());
+    }
+
+    @Test
+    void testMultipleProcessesMemoryManagement() {
+        // 测试多个进程的内存管理
+        assertTrue(memoryManager.allocateMemoryForProcess(process1, 16));
+        assertTrue(memoryManager.allocateMemoryForProcess(process2, 32));
+
+        int allocatedMemory = 1024 - memoryManager.getFreeMemorySize();
+        assertEquals(48, allocatedMemory);
+
+        memoryManager.freeMemoryForProcess(process1);
+        allocatedMemory = 1024 - memoryManager.getFreeMemorySize();
+        assertEquals(32, allocatedMemory);
+
+        memoryManager.freeMemoryForProcess(process2);
+        allocatedMemory = 1024 - memoryManager.getFreeMemorySize();
+        assertEquals(0, allocatedMemory);
         assertEquals(1024, memoryManager.getFreeMemorySize());
     }
 
     @Test
-    public void testMemoryMerge() {
-        // 创建进程对象
-        Process process1 = new Process(null, "Process1", 1, Process.ProcessState.NEW, 256);
-        Process process2 = new Process(null, "Process2", 2, Process.ProcessState.NEW, 256);
+    void testMemoryFragmentation() {
+        // 测试内存碎片化情况
+        assertTrue(memoryManager.allocateMemoryForProcess(process1, 16));
+        assertTrue(memoryManager.allocateMemoryForProcess(process2, 32));
 
-        // 分配内存
-        assertTrue(memoryManager.allocateMemoryForProcess(process1, 256));
-        assertTrue(memoryManager.allocateMemoryForProcess(process2, 256));
-
-        // 释放内存并合并空闲块
         memoryManager.freeMemoryForProcess(process1);
-        memoryManager.freeMemoryForProcess(process2);
 
-        // 验证空闲块是否合并
         List<MemoryBlock> freeBlocks = memoryManager.getFreeBlocks();
-        assertEquals(1, freeBlocks.size());
-        assertEquals(1024, freeBlocks.get(0).getSize());
+        assertEquals(2, freeBlocks.size()); // 应该有两个空闲块
+
+        // 验证空闲块的大小和位置
+        boolean foundFirstBlock = false;
+        boolean foundSecondBlock = false;
+
+        for (MemoryBlock block : freeBlocks) {
+            if (block.getStart() == 0 && block.getSize() == 16) {
+                foundFirstBlock = true;
+            } else if (block.getStart() == 48 && block.getSize() == 976) {
+                foundSecondBlock = true;
+            }
+        }
+
+        assertTrue(foundFirstBlock && foundSecondBlock);
+    }
+
+    @Test
+    void testMemoryAllocationFailure() {
+        // 测试内存分配失败的情况
+        Process largeProcess = new Process();
+        largeProcess.setId(3L);
+        largeProcess.setName("LargeProcess");
+        largeProcess.setMemorySize(2048); // 尝试分配超过总内存的大小
+
+        assertFalse(memoryManager.allocateMemoryForProcess(largeProcess, 2048));
+        assertEquals(1024, memoryManager.getFreeMemorySize());
+    }
+
+    @Test
+    void testMemoryStatus() {
+        // 测试内存状态数组
+        assertTrue(memoryManager.allocateMemoryForProcess(process1, 16));
+        int[] status = memoryManager.getMemoryStatus();
+
+        // 验证前4个页（16MB）被分配
+        for (int i = 0; i < 4; i++) {
+            assertEquals(1, status[i]); // 进程1的ID为1
+        }
+
+        // 验证其余页未被分配
+        for (int i = 4; i < status.length; i++) {
+            assertEquals(0, status[i]);
+        }
     }
 }
