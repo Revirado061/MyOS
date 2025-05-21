@@ -21,18 +21,17 @@ public class MemoryController {
         return memoryManager.getFreeMemorySize();
     }
 
-    // 获取每一个内存块的状态
-    @GetMapping("status")
-    public int[] getMemoryStatus() {
-        return memoryManager.getMemoryStatus();
-    }
-
     // 获取空闲内存块列表
     @GetMapping("free-blocks")
     public List<MemoryBlock> getFreeMemoryBlocks() {
         return memoryManager.getFreeBlocks();
     }
 
+    // 获取每一个内存块的状态
+    @GetMapping("status")
+    public long[] getMemoryStatus() {
+        return memoryManager.getMemoryStatus();
+    }
 
     // 获取内存使用率
     @GetMapping("/usage")

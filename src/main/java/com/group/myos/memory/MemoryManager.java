@@ -18,7 +18,7 @@ public interface MemoryManager {
     // 获取内存使用率
     double getMemoryUsage();
     // 获取每个内存块状态
-    int[] getMemoryStatus();
+    long[] getMemoryStatus();
     
     // 分页管理
     boolean allocatePage(Process process, int virtualPageNumber);

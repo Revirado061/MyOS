@@ -22,7 +22,7 @@ public class MemoryManagerImpl implements MemoryManager {
     private final Map<Process, MemoryBlock> allocatedMemoryForProcess; // 已分配内存的进程映射
     private final List<MemoryBlock> freeBlocks; // 空闲内存块列表
     private final Map<Process, PageEntry[]> pageTables; // 进程页表
-    private final int[] pageBitmap; // 物理页使用情况
+    private final long[] pageBitmap; // 物理页使用情况
     private final int[] pageLastVisit; // 页面最后访问时间
     private final List<SwappedOutPage> swappedPages; // 被换出的页面
     private int currentTime; // 当前时间，用于LRU算法
@@ -32,7 +32,7 @@ public class MemoryManagerImpl implements MemoryManager {
         this.allocatedMemoryForProcess = new HashMap<>();
         this.freeBlocks = new ArrayList<>();
         this.pageTables = new HashMap<>();
-        this.pageBitmap = new int[TOTAL_MEMORY / PAGE_SIZE];
+        this.pageBitmap = new long[TOTAL_MEMORY / PAGE_SIZE];
         this.pageLastVisit = new int[TOTAL_MEMORY / PAGE_SIZE];
         this.swappedPages = new ArrayList<>();
         this.currentTime = 0;
@@ -46,14 +46,14 @@ public class MemoryManagerImpl implements MemoryManager {
         // 计算需要的页数（向上取整）
         int requiredPages = (size + PAGE_SIZE - 1) / PAGE_SIZE;
         if (requiredPages > MAX_PAGES_PER_PROCESS) {
-            logger.error("Process {} requires too many pages: {}", process.getName(), requiredPages);
+            logger.error("Process {} requires too many pages: {}", process.getId(), requiredPages);
             return false;
         }
 
         // 检查是否有足够的空闲内存
         if (getFreeMemorySize() < size) {
             logger.error("Not enough free memory for process {}: required {}, available {}", 
-                process.getName(), size, getFreeMemorySize());
+                process.getId(), size, getFreeMemorySize());
             return false;
         }
 
@@ -171,7 +171,7 @@ public class MemoryManagerImpl implements MemoryManager {
         pageTables.get(process)[virtualPageNumber] = pageEntry;
         
         // 更新页表位图
-        pageBitmap[physicalPage] = process.getId().intValue();
+        pageBitmap[physicalPage] = process.getId();
         pageLastVisit[physicalPage] = currentTime++;
         
         return true;
@@ -204,7 +204,7 @@ public class MemoryManagerImpl implements MemoryManager {
     @Override
     public boolean writeMemory(Process process, int virtualAddress, Object content) {
         if (virtualAddress < 0 || virtualAddress >= TOTAL_MEMORY) {
-            logger.error("Invalid virtual address: {} for process {}", virtualAddress, process.getName());
+            logger.error("Invalid virtual address: {} for process {}", virtualAddress, process.getId());
             return false;
         }
 
@@ -219,14 +219,14 @@ public class MemoryManagerImpl implements MemoryManager {
         }
 
         if (!pageEntry.isWrite()) {
-            logger.error("Write permission denied for process {} at address {}", process.getName(), virtualAddress);
+            logger.error("Write permission denied for process {} at address {}", process.getId(), virtualAddress);
             return false;
         }
 
         // 写入内存
         int physicalAddress = pageEntry.getPhysicalPageNumber() * PAGE_SIZE + offset;
         if (physicalAddress >= memory.length) {
-            logger.error("Physical address out of bounds: {} for process {}", physicalAddress, process.getName());
+            logger.error("Physical address out of bounds: {} for process {}", physicalAddress, process.getId());
             return false;
         }
         memory[physicalAddress] = content;
@@ -239,7 +239,7 @@ public class MemoryManagerImpl implements MemoryManager {
     @Override
     public Object readMemory(Process process, int virtualAddress) {
         if (virtualAddress < 0 || virtualAddress >= TOTAL_MEMORY) {
-            logger.error("Invalid virtual address: {} for process {}", virtualAddress, process.getName());
+            logger.error("Invalid virtual address: {} for process {}", virtualAddress, process.getId());
             return null;
         }
 
@@ -254,14 +254,14 @@ public class MemoryManagerImpl implements MemoryManager {
         }
 
         if (!pageEntry.isRead()) {
-            logger.error("Read permission denied for process {} at address {}", process.getName(), virtualAddress);
+            logger.error("Read permission denied for process {} at address {}", process.getId(), virtualAddress);
             return null;
         }
 
         // 读取内存
         int physicalAddress = pageEntry.getPhysicalPageNumber() * PAGE_SIZE + offset;
         if (physicalAddress >= memory.length) {
-            logger.error("Physical address out of bounds: {} for process {}", physicalAddress, process.getName());
+            logger.error("Physical address out of bounds: {} for process {}", physicalAddress, process.getId());
             return null;
         }
         pageLastVisit[pageEntry.getPhysicalPageNumber()] = currentTime++;
@@ -318,9 +318,9 @@ public class MemoryManagerImpl implements MemoryManager {
             // 保存页面内容
             Object[] pageContent = new Object[PAGE_SIZE];
             if (memory != null) {
-            System.arraycopy(memory, physicalPage * PAGE_SIZE, pageContent, 0, PAGE_SIZE);
+                System.arraycopy(memory, physicalPage * PAGE_SIZE, pageContent, 0, PAGE_SIZE);
             }
-            swappedPages.add(new SwappedOutPage(process.getId().intValue(), virtualPageNumber, pageContent));
+            swappedPages.add(new SwappedOutPage(process.getId(), virtualPageNumber, pageContent));
             // 清除页表项
             pageEntry.setValid(false);
             // 清除页表位图
@@ -342,13 +342,13 @@ public class MemoryManagerImpl implements MemoryManager {
             }
             // 恢复页面内容
             if (swappedPage.getContent() != null && memory != null) {
-            System.arraycopy(swappedPage.getContent(), 0, memory, physicalPage * PAGE_SIZE, PAGE_SIZE);
+                System.arraycopy(swappedPage.getContent(), 0, memory, physicalPage * PAGE_SIZE, PAGE_SIZE);
             }
             // 更新页表
             PageEntry pageEntry = new PageEntry(physicalPage);
             pageTables.get(process)[virtualPageNumber] = pageEntry;
             // 更新页表位图
-            pageBitmap[physicalPage] = process.getId().intValue();
+            pageBitmap[physicalPage] = process.getId();
             pageLastVisit[physicalPage] = currentTime++;
             // 从交换区移除
             swappedPages.remove(swappedPage);
@@ -379,7 +379,7 @@ public class MemoryManagerImpl implements MemoryManager {
 
     private SwappedOutPage findSwappedPage(Process process, int virtualPageNumber) {
         for (SwappedOutPage page : swappedPages) {
-            if (page.getProcessId() == process.getId().intValue() && page.getVirtualPageNumber() == virtualPageNumber) {
+            if (page.getProcessId() == process.getId() && page.getVirtualPageNumber() == virtualPageNumber) {
                 return page;
             }
         }
@@ -387,8 +387,8 @@ public class MemoryManagerImpl implements MemoryManager {
     }
 
     @Override
-    public int[] getMemoryStatus() {
-        int[] memoryStatus = new int[TOTAL_MEMORY / PAGE_SIZE];
+    public long[] getMemoryStatus() {
+        long[] memoryStatus = new long[TOTAL_MEMORY / PAGE_SIZE];
         Arrays.fill(memoryStatus, 0);
         
         // 遍历页表位图，设置已分配的内存块
@@ -403,15 +403,14 @@ public class MemoryManagerImpl implements MemoryManager {
 
     @Getter
     private static class SwappedOutPage {
-        private final int processId;
+        private final long processId;
         private final int virtualPageNumber;
         private final Object[] content;
 
-        public SwappedOutPage(int processId, int virtualPageNumber, Object[] content) {
+        public SwappedOutPage(long processId, int virtualPageNumber, Object[] content) {
             this.processId = processId;
             this.virtualPageNumber = virtualPageNumber;
             this.content = content;
         }
-
     }
 }
