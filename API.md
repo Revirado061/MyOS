@@ -72,47 +72,12 @@
 
 ## 内存管理
 
-### 分配内存
-- **请求方法**: POST
-- **请求URL**: `/memory/allocate`
-- **请求参数**:
-  ```json
-  {
-    "processId": 1,
-    "size": 256  // 内存大小（MB）
-  }
-  ```
+### 获取空闲内存大小
+- **请求方法**: GET
+- **请求URL**: `/memory/free-size`
 - **返回数据**:
   ```json
-  {
-    "success": true,
-    "message": "内存分配成功",
-    "data": {
-      "startAddress": 0,
-      "size": 256
-    }
-  }
-  ```
-- **错误码**:
-  - 400: 内存不足
-  - 404: 进程不存在
-  - 500: 服务器内部错误
-
-### 释放内存
-- **请求方法**: POST
-- **请求URL**: `/memory/free`
-- **请求参数**:
-  ```json
-  {
-    "processId": 1
-  }
-  ```
-- **返回数据**:
-  ```json
-  {
-    "success": true,
-    "message": "内存释放成功"
-  }
+  1024   // 当前空闲内存大小
   ```
 
 ### 获取内存状态
@@ -120,20 +85,28 @@
 - **请求URL**: `/memory/status`
 - **返回数据**:
   ```json
-  {
-    "totalMemory": 1024,
-    "usedMemory": 512,
-    "freeMemory": 512,
-    "blocks": [
-      {
-        "id": 1,
-        "processId": 1,
-        "startAddress": 0,
-        "size": 256,
-        "status": "ALLOCATED"
-      }
-    ]
-  }
+  [1, 0, 2, 0, 3]  // int[256] 数组表示每个内存块的状态，非0值表示被进程占用（非0值为对应进程的id），0表示空闲
+  ```
+
+### 获取空闲内存块列表
+- **请求方法**: GET
+- **请求URL**: `/memory/free-blocks`
+- **返回数据**:
+  ```json
+  [
+    {
+      "start": 0,    // 起始地址
+      "size": 256    // 块大小（MB）
+    }
+  ]
+  ```
+
+### 获取内存使用率
+- **请求方法**: GET
+- **请求URL**: `/memory/usage`
+- **返回数据**:
+  ```json
+  0.75  // 返回内存使用率（0-1之间的浮点数）
   ```
 
 ## 文件系统
