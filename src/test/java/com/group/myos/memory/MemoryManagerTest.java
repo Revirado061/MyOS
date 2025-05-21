@@ -15,6 +15,10 @@ public class MemoryManagerTest {
     private Process process1;
     private Process process2;
 
+    private Process process3;
+
+    private Process process4;
+
     @BeforeEach
     void setUp() {
         memoryManager = new MemoryManagerImpl();
@@ -27,6 +31,16 @@ public class MemoryManagerTest {
         process2.setId(2L);
         process2.setName("Process2");
         process2.setMemorySize(32); // 32MB
+
+        process3 = new Process();
+        process3.setId(3L);
+        process3.setName("Process3");
+        process3.setMemorySize(16); // 16MB
+
+        process4 = new Process();
+        process4.setId(4L);
+        process4.setName("Process4");
+        process4.setMemorySize(16); // 16MB
     }
 
     @Test
@@ -59,6 +73,25 @@ public class MemoryManagerTest {
 
         assertEquals(1024, freeMemoryAfterFree); // 释放后应该恢复全部内存
         assertEquals(0.0, memoryManager.getMemoryUsage());
+    }
+
+    @Test
+    void testMemoryAllocationAndFree1() {
+        // 测试内存分配和释放
+        assertTrue(memoryManager.allocateMemoryForProcess(process1, 16));
+        assertTrue(memoryManager.allocateMemoryForProcess(process2, 32));
+        assertTrue(memoryManager.allocateMemoryForProcess(process3, 16));
+
+        memoryManager.freeMemoryForProcess(process2);
+        assertEquals(992, memoryManager.getFreeMemorySize());
+
+        assertTrue(memoryManager.allocateMemoryForProcess(process4, 16));
+        assertEquals(976, memoryManager.getFreeMemorySize());
+
+        List<MemoryBlock> list = memoryManager.getFreeBlocks();
+        for(MemoryBlock memoryBlock : list){
+            System.out.println("start: " + memoryBlock.getStart() + " " + "size: " + memoryBlock.getSize());
+        }
     }
 
     @Test
