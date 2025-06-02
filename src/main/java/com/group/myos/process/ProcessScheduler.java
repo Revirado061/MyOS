@@ -2,6 +2,8 @@ package com.group.myos.process;
 
 import com.group.myos.memory.MemoryManager;
 import com.group.myos.process.model.Process;
+import com.group.myos.process.model.ProcessTransition;
+import com.group.myos.process.repository.ProcessTransitionRepository;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -20,10 +22,15 @@ public class ProcessScheduler {
     
     private final MemoryManager memoryManager;
     private final ProcessSwapper processSwapper;
+    private final ProcessTransitionRepository transitionRepository;
     
-    public ProcessScheduler(MemoryManager memoryManager, ProcessSwapper processSwapper) {
+    public ProcessScheduler(
+            MemoryManager memoryManager, 
+            ProcessSwapper processSwapper,
+            ProcessTransitionRepository transitionRepository) {
         this.memoryManager = memoryManager;
         this.processSwapper = processSwapper;
+        this.transitionRepository = transitionRepository;
         this.readyQueue = new PriorityBlockingQueue<>(100, 
             Comparator.comparing(Process::getPriority).reversed());
         this.allProcesses = new ConcurrentHashMap<>();
@@ -53,6 +60,12 @@ public class ProcessScheduler {
                 process.setInMemory(false);
                 process.setState(Process.ProcessState.WAITING);
                 waitingProcesses.add(process);
+                
+                // 记录状态转换：NEW -> WAITING（内存不足）
+                if (process.getId() != null) {
+                    recordTransition(process, Process.ProcessState.NEW, Process.ProcessState.WAITING, "内存不足");
+                }
+                
                 return process;
             }
         }
@@ -64,6 +77,12 @@ public class ProcessScheduler {
             process.setInMemory(false);
             process.setState(Process.ProcessState.WAITING);
             waitingProcesses.add(process);
+            
+            // 记录状态转换：NEW -> WAITING（内存分配失败）
+            if (process.getId() != null) {
+                recordTransition(process, Process.ProcessState.NEW, Process.ProcessState.WAITING, "内存分配失败");
+            }
+            
             return process;
         }
         
@@ -79,6 +98,9 @@ public class ProcessScheduler {
         }
         
         allProcesses.put(process.getId(), process);
+        
+        // 记录状态转换：NEW -> READY
+        recordTransition(process, Process.ProcessState.NEW, Process.ProcessState.READY, "进程创建并分配内存成功");
         
         return process;
     }
@@ -107,9 +129,13 @@ public class ProcessScheduler {
         if (currentProcess != null) {
             if (currentProcess.getState() == Process.ProcessState.RUNNING) {
                 // 将当前运行进程设置为就绪状态并放回队列
+                Process.ProcessState oldState = currentProcess.getState();
                 currentProcess.setState(Process.ProcessState.READY);
                 currentProcess.setLastUpdateTime(LocalDateTime.now());
                 readyQueue.offer(currentProcess);
+                
+                // 记录状态转换：RUNNING -> READY
+                recordTransition(currentProcess, oldState, Process.ProcessState.READY, "时间片用完");
             }
         }
         
@@ -128,8 +154,12 @@ public class ProcessScheduler {
             }
             
             // 设置为运行状态
+            Process.ProcessState oldState = currentProcess.getState();
             currentProcess.setState(Process.ProcessState.RUNNING);
             currentProcess.setLastUpdateTime(LocalDateTime.now());
+            
+            // 记录状态转换：READY -> RUNNING
+            recordTransition(currentProcess, oldState, Process.ProcessState.RUNNING, "调度执行");
         }
         
         return currentProcess;
@@ -143,6 +173,8 @@ public class ProcessScheduler {
             return;
         }
         
+        Process.ProcessState oldState = process.getState();
+        
         if (process.equals(currentProcess)) {
             currentProcess = null;
         } else {
@@ -154,6 +186,9 @@ public class ProcessScheduler {
         process.setState(Process.ProcessState.WAITING);
         process.setLastUpdateTime(LocalDateTime.now());
         waitingProcesses.add(process);
+        
+        // 记录状态转换：oldState -> WAITING
+        recordTransition(process, oldState, Process.ProcessState.WAITING, "主动阻塞");
     }
     
     /**
@@ -163,6 +198,8 @@ public class ProcessScheduler {
         if (process == null || process.getState() != Process.ProcessState.WAITING) {
             return;
         }
+        
+        Process.ProcessState oldState = process.getState();
         
         // 从等待列表移除
         waitingProcesses.remove(process);
@@ -188,6 +225,9 @@ public class ProcessScheduler {
         process.setState(Process.ProcessState.READY);
         process.setLastUpdateTime(LocalDateTime.now());
         readyQueue.offer(process);
+        
+        // 记录状态转换：WAITING -> READY
+        recordTransition(process, oldState, Process.ProcessState.READY, "唤醒");
     }
     
     /**
@@ -197,6 +237,8 @@ public class ProcessScheduler {
         if (process == null) {
             return;
         }
+        
+        Process.ProcessState oldState = process.getState();
         
         if (process.equals(currentProcess)) {
             currentProcess = null;
@@ -227,6 +269,9 @@ public class ProcessScheduler {
         process.setState(Process.ProcessState.TERMINATED);
         process.setLastUpdateTime(LocalDateTime.now());
         terminatedProcesses.add(process);
+        
+        // 记录状态转换：oldState -> TERMINATED
+        recordTransition(process, oldState, Process.ProcessState.TERMINATED, "进程终止");
     }
     
     /**
@@ -289,6 +334,9 @@ public class ProcessScheduler {
                     // 先将当前运行进程设置为就绪
                     currentProcess.setState(Process.ProcessState.READY);
                     readyQueue.offer(currentProcess);
+                    
+                    // 记录状态转换：RUNNING -> READY（抢占）
+                    recordTransition(currentProcess, Process.ProcessState.RUNNING, Process.ProcessState.READY, "被高优先级进程抢占");
                 }
                 currentProcess = process;
                 break;
@@ -299,6 +347,9 @@ public class ProcessScheduler {
                 terminateProcess(process);
                 break;
         }
+        
+        // 记录状态转换
+        recordTransition(process, oldState, newState, "状态更新");
     }
     
     /**
@@ -343,5 +394,20 @@ public class ProcessScheduler {
         return allProcesses.values().stream()
                 .filter(Process::isInMemory)
                 .collect(Collectors.toList());
+    }
+    
+    /**
+     * 记录进程状态转换
+     */
+    private void recordTransition(Process process, Process.ProcessState fromState, Process.ProcessState toState, String reason) {
+        ProcessTransition transition = new ProcessTransition(process, fromState, toState, reason);
+        transitionRepository.save(transition);
+    }
+    
+    /**
+     * 获取进程状态转换历史
+     */
+    public List<ProcessTransition> getProcessTransitionHistory(Long processId) {
+        return transitionRepository.findByProcessId(processId);
     }
 } 

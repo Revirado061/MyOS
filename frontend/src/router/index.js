@@ -1,42 +1,23 @@
-import Vue from 'vue'
-import VueRouter from 'vue-router'
-
-Vue.use(VueRouter)
+import { createRouter, createWebHistory } from 'vue-router'
+import App from '../App.vue'
+import Test from '../test.vue'
 
 const routes = [
   {
     path: '/',
-    redirect: '/process'
+    name: 'App',
+    component: App
   },
   {
-    path: '/process',
-    name: 'Process',
-    component: () => import('../views/Process.vue')
-  },
-  {
-    path: '/memory',
-    name: 'Memory',
-    component: () => import('../views/Memory.vue')
-  },
-  {
-    path: '/filesystem',
-    name: 'FileSystem',
-    component: () => import('../views/FileSystem.vue')
-  },
-  {
-    path: '/device',
-    name: 'Device',
-    component: () => import('../views/Device.vue')
-  },
-  {
-    path: '/interrupt',
-    name: 'Interrupt',
-    component: () => import('../views/Interrupt.vue')
+    path: '/test',
+    name: 'Test',
+    component: Test
   }
 ]
 
-const router = new VueRouter({
+const router = createRouter({
+  history: createWebHistory(),
   routes
 })
 
-export default router 
+export default router

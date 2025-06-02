@@ -53,36 +53,66 @@ export default {
 </script>
 
 <style>
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
 #app {
   font-family: 'Microsoft YaHei', Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
   color: #2c3e50;
-  margin: 0;
-  padding: 20px;
-  min-height: 100vh;
   background-color: #f5f7fa;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.el-tabs {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.el-tabs__content {
+  flex: 1;
+  overflow: auto;
+}
+
+.el-tab-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .tab-content {
-  position: relative;
-  padding-top: 50px;
+  flex: 1;
+  padding: 20px;
+  box-sizing: border-box;
+  margin-top: 10px;
+  margin-left: 10px;
+  margin-right: 10px;
+  margin-bottom: 40px;
 }
 
 .management-container {
   display: flex;
   gap: 20px;
+  width: 100%;
+  height: 100%;
 }
 
 .left-panel {
-  flex: 1;
+  flex: 6;
+  min-width: 0;
+
 }
 
 .right-panel {
-  flex: 1;
+  flex: 4;
+  min-width: 0;
+  overflow: auto;
 }
 
-.el-tabs {
-  margin-top: 20px;
-}
 </style> 

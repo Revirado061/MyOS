@@ -11,7 +11,7 @@
             <el-radio label="directory">目录</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item v-if="fileForm.type === 'file'" label="文件大小(KB)">
+        <el-form-item v-if="fileForm.type === 'file'" label="文件大小(MB)" label-width="165px">
           <el-input-number v-model="fileForm.size" :min="1" :max="1024"></el-input-number>
         </el-form-item>
         <el-form-item>
@@ -45,11 +45,11 @@
     </div>
 
     <div class="disk-blocks">
-      <h3>磁盘空间分配</h3>
+      <h2>磁盘空间分配</h2>
       <div class="disk-info">
-        <div>总空间: {{ totalSpace }}KB</div>
-        <div>已用空间: {{ usedSpace }}KB</div>
-        <div>空闲空间: {{ freeSpace }}KB</div>
+        <div>总空间: {{ totalSpace }}MB</div>
+        <div>已用空间: {{ usedSpace }}MB</div>
+        <div>空闲空间: {{ freeSpace }}MB</div>
       </div>
       
       <div class="disk-blocks-grid">
@@ -89,12 +89,13 @@ export default {
         children: 'children',
         label: 'label'
       },
-      totalSpace: 1024,
+      totalSpace: 4096,
       usedSpace: 0,
-      freeSpace: 1024,
-      blockSize: 4,
+      freeSpace: 4096,
+      blockSize: 8,
       diskRows: [],
-      blocksPerRow: 16
+      blocksPerRow: 32,
+      updateInterval: null
     }
   },
   created() {
@@ -142,7 +143,7 @@ export default {
     },
     getBlockTooltip(block) {
       if (block.status === 'ALLOCATED') {
-        return `文件: ${block.fileId}\n大小: ${block.size}KB`
+        return `文件: ${block.fileId}\n大小: ${block.size}MB`
       }
       return '空闲块'
     },
@@ -192,47 +193,96 @@ export default {
   display: flex;
   gap: 20px;
   padding: 20px;
+  height: calc(100vh - 120px); /* 减去头部和padding的高度 */
 }
 
 .file-control {
-  width: 300px;
+  flex: 4;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid #dcdfe6;
+  padding-right: 20px;
+  font-size: 16px;
+}
+
+/* 添加表单相关样式 */
+:deep(.el-form-item__label) {
+  font-size: 16px !important;
+}
+
+:deep(.el-input__inner) {
+  font-size: 16px !important;
+}
+
+:deep(.el-radio__label) {
+  font-size: 16px !important;
+}
+
+:deep(.el-input-number__decrease),
+:deep(.el-input-number__increase) {
+  font-size: 16px !important;
+}
+
+:deep(.el-input-number__input) {
+  font-size: 16px !important;
+}
+
+:deep(.el-button) {
+  font-size: 16px !important;
 }
 
 .file-tree {
   margin-top: 20px;
+  flex: 1;
+  overflow-y: auto;
 }
 
 .disk-blocks {
-  flex: 1;
+  flex: 6;
+  display: flex;
+  flex-direction: column;
 }
 
 .disk-info {
   display: flex;
   gap: 20px;
-  margin-bottom: 20px;
+  margin-bottom: 15px;
+  font-size: 16px;
 }
 
 .disk-blocks-grid {
   border: 1px solid #dcdfe6;
-  padding: 10px;
-  background-color: #f5f7fa;
+  padding: 15px;
+  background-color: #ffffff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-y: auto;
+  max-height: calc(100vh - 250px);
 }
 
 .disk-row {
   display: flex;
   gap: 2px;
   margin-bottom: 2px;
+  justify-content: center;
 }
 
 .disk-block {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   border: 1px solid #dcdfe6;
   cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.disk-block:hover {
+  transform: scale(1.1);
+  z-index: 1;
 }
 
 .disk-block.allocated {
-  background-color: #67c23a;
+  background-color: #409eff;
 }
 
 .disk-block.free {
