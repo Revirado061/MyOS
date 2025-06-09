@@ -10,8 +10,8 @@
 ### 成功响应
 ```json
 {
-    "code": 200,
-    "message": "success",
+    "success": true,
+    "message": "操作成功",
     "data": {
         // 具体响应数据
     }
@@ -21,12 +21,8 @@
 ### 错误响应
 ```json
 {
-    "code": 400,
-    "message": "错误描述",
-    "error": {
-        "code": "ERROR_CODE",
-        "details": "详细错误信息"
-    }
+    "success": false,
+    "message": "错误描述"
 }
 ```
 
@@ -43,7 +39,7 @@
 {
     "name": "进程名称",
     "priority": 1,        // 优先级（1-3）
-    "memorySize": 1024    // 内存大小（KB）
+    "memorySize": 1024    // 内存大小（MB）
 }
 ```
 - **响应**: 返回创建的进程对象
@@ -221,17 +217,6 @@
 - **描述**: 获取指定进程的状态转换历史
 - **响应**: 返回状态转换历史数组
 
-## 状态码说明
-
-| 状态码 | 说明 |
-|--------|------|
-| 200 | 请求成功 |
-| 201 | 创建成功 |
-| 400 | 请求参数错误 |
-| 404 | 资源不存在 |
-| 409 | 资源冲突（如内存不足） |
-| 500 | 服务器内部错误 |
-
 ## 进程状态说明
 
 | 状态 | 说明 |
@@ -257,4 +242,51 @@
 | INVALID_STATE_TRANSITION | 无效的状态转换 |
 | INSUFFICIENT_MEMORY | 内存不足 |
 | PROCESS_ALREADY_EXISTS | 进程已存在 |
-| INVALID_PRIORITY | 无效的优先级值 | 
+| INVALID_PRIORITY | 无效的优先级值 |
+
+## 前端组件使用示例
+
+```javascript
+// 创建进程
+async createProcess(processData) {
+  try {
+    const response = await createProcess(processData);
+    this.$message.success('进程创建成功');
+    await this.fetchProcesses();
+  } catch (error) {
+    this.$message.error('进程创建失败');
+  }
+}
+
+// 获取进程列表
+async fetchProcesses() {
+  try {
+    const response = await getAllProcesses();
+    this.processes = response.data;
+  } catch (error) {
+    this.$message.error('获取进程列表失败');
+  }
+}
+
+// 终止进程
+async handleTerminate(process) {
+  try {
+    await terminateProcess(process.id);
+    this.$message.success(`进程 ${process.name} 已终止`);
+    await this.fetchProcesses();
+  } catch (error) {
+    this.$message.error('终止进程失败');
+  }
+}
+```
+
+## 状态码说明
+
+| 状态码 | 说明 |
+|--------|------|
+| 200 | 请求成功 |
+| 201 | 创建成功 |
+| 400 | 请求参数错误 |
+| 404 | 资源不存在 |
+| 409 | 资源冲突（如内存不足） |
+| 500 | 服务器内部错误 | 

@@ -333,7 +333,7 @@ export default {
         const newProcess = {
           name: this.processForm.name,
           priority: this.processForm.priority,
-          memorySize: this.processForm.memorySize * 1024,
+          memorySize: this.processForm.memorySize, //* 1024
         }
         console.log('创建进程数据:', newProcess)
         

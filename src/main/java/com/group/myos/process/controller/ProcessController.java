@@ -6,6 +6,7 @@ import com.group.myos.process.ProcessScheduler;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,12 +26,38 @@ public class ProcessController {
     // 进程管理API
     @PostMapping("")
     public Process createProcess(@RequestBody Process process) {
+        // 确保基本字段不为空
+        if (process.getName() == null || process.getName().trim().isEmpty()) {
+            process.setName("Process-" + System.currentTimeMillis());
+        }
+        
+        if (process.getPriority() == null) {
+            process.setPriority(0);
+        }
+        
+        if (process.getMemorySize() == null) {
+            process.setMemorySize(10); // 默认内存大小
+        }
+        
         return processScheduler.addProcess(process);
     }
 
     // 添加新的端点：创建进程并立即启动（设置为READY状态）
     @PostMapping("/create-and-start")
     public Process createAndStartProcess(@RequestBody Process process) {
+        // 确保基本字段不为空
+        if (process.getName() == null || process.getName().trim().isEmpty()) {
+            process.setName("Process-" + System.currentTimeMillis());
+        }
+        
+        if (process.getPriority() == null) {
+            process.setPriority(0);
+        }
+        
+        if (process.getMemorySize() == null) {
+            process.setMemorySize(10); // 默认内存大小
+        }
+        
         // 创建进程
         Process newProcess = processScheduler.addProcess(process);
         
@@ -44,27 +71,32 @@ public class ProcessController {
 
     @GetMapping("")
     public List<Process> getAllProcesses() {
-        return processScheduler.getAllProcesses();
+        List<Process> processes = processScheduler.getAllProcesses();
+        return processes != null ? processes : new ArrayList<>();
     }
     
     @GetMapping("ready")
     public List<Process> getReadyProcesses() {
-        return processScheduler.getReadyProcesses();
+        List<Process> processes = processScheduler.getReadyProcesses();
+        return processes != null ? processes : new ArrayList<>();
     }
     
     @GetMapping("waiting")
     public List<Process> getWaitingProcesses() {
-        return processScheduler.getWaitingProcesses();
+        List<Process> processes = processScheduler.getWaitingProcesses();
+        return processes != null ? processes : new ArrayList<>();
     }
     
     @GetMapping("terminated")
     public List<Process> getTerminatedProcesses() {
-        return processScheduler.getTerminatedProcesses();
+        List<Process> processes = processScheduler.getTerminatedProcesses();
+        return processes != null ? processes : new ArrayList<>();
     }
     
     @GetMapping("swapped")
     public List<Process> getSwappedProcesses() {
-        return processSwapper.getSwappedProcesses();
+        List<Process> processes = processSwapper.getSwappedProcesses();
+        return processes != null ? processes : new ArrayList<>();
     }
 
     @GetMapping("current")
