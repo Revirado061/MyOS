@@ -145,4 +145,14 @@ public class FileSystemController {
         response.put("message", result ? "文件写入成功" : "文件不存在或未打开");
         return ResponseEntity.ok(response);
     }
+
+    // 获取完整目录树
+    @GetMapping("/tree")
+    public ResponseEntity<?> getDirectoryTree() {
+        Map<String, Object> tree = fileSystem.getDirectoryTree();
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("tree", tree);
+        return ResponseEntity.ok(response);
+    }
 } 

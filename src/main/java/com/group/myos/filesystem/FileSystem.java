@@ -175,6 +175,7 @@ public class FileSystem {
         }
 
         file.setSize(contentSize);
+        file.setAllocated(true);
         return true;
     }
 
@@ -211,5 +212,53 @@ public class FileSystem {
         result.put("files", new ArrayList<>(currentDirectory.getFiles().values()));
         result.put("directories", new ArrayList<>(currentDirectory.getSubdirectories().keySet()));
         return result;
+    }
+
+    // 获取完整的目录树
+    public Map<String, Object> getDirectoryTree() {
+        Map<String, Object> tree = new HashMap<>();
+        tree.put("name", root.getName());
+        tree.put("type", "directory");
+        tree.put("path", "/");
+        tree.put("children", getDirectoryChildren(root));
+        return tree;
+    }
+
+    private List<Map<String, Object>> getDirectoryChildren(Directory dir) {
+        List<Map<String, Object>> children = new ArrayList<>();
+        
+        // 添加文件
+        for (File file : dir.getFiles().values()) {
+            Map<String, Object> fileNode = new HashMap<>();
+            fileNode.put("name", file.getName());
+            fileNode.put("type", "file");
+            fileNode.put("path", file.getPath());
+            fileNode.put("size", file.getSize());
+            fileNode.put("isOpen", file.isOpen());
+            fileNode.put("isAllocated", file.isAllocated());
+            children.add(fileNode);
+        }
+        
+        // 添加子目录
+        for (Directory subDir : dir.getSubdirectories().values()) {
+            Map<String, Object> dirNode = new HashMap<>();
+            dirNode.put("name", subDir.getName());
+            dirNode.put("type", "directory");
+            dirNode.put("path", getDirectoryPath(subDir));
+            dirNode.put("children", getDirectoryChildren(subDir));
+            children.add(dirNode);
+        }
+        
+        return children;
+    }
+
+    private String getDirectoryPath(Directory dir) {
+        StringBuilder path = new StringBuilder();
+        Directory current = dir;
+        while (current != null && current != root) {
+            path.insert(0, "/" + current.getName());
+            current = current.getParent();
+        }
+        return path.length() == 0 ? "/" : path.toString();
     }
 }
