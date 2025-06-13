@@ -23,4 +23,12 @@ export function getCurrentProcess() {
     url: '/process/current',
     method: 'get'
   })
+}
+
+// 获取特定状态的进程
+export function getProcessesByState(state) {
+  return request({
+    url: `/process/${state}`,
+    method: 'get'
+  })
 } 

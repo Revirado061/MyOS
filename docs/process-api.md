@@ -1,5 +1,6 @@
 # MyOS 进程管理 API 文档
 
+
 ## 基本信息
 - 基础URL: `http://localhost:8080/api`
 - 所有请求和响应均使用 JSON 格式
@@ -62,7 +63,7 @@
 - **方法**: `GET`
 - **描述**: 获取特定状态的进程列表
 - **路径参数**:
-  - `state`: 进程状态（ready/waiting/terminated/swapped）
+  - `state`: 进程状态（NEW/READY/RUNNING/WAITING/TERMINATED）
 - **响应**: 返回进程列表数组
 
 #### 1.5 获取当前运行进程
@@ -216,6 +217,48 @@
 - **方法**: `GET`
 - **描述**: 获取指定进程的状态转换历史
 - **响应**: 返回状态转换历史数组
+
+
+#### 1.19 进程请求设备
+- **URL**: `/process/{id}/request-device`
+- **方法**: `POST`
+- **描述**: 运行中的进程请求使用设备，会将进程状态从RUNNING转为WAITING
+- **请求参数**:
+  - `deviceType`: 设备类型（必填）
+  - `deviceId`: 设备ID（可选）
+- **响应**:
+```json
+{
+    "success": true,
+    "message": "进程已请求设备并转入等待状态",
+    "data": {
+        "processId": 1,
+        "processName": "进程名称",
+        "deviceType": "设备类型",
+        "deviceId": 1,
+        "requestTime": "2023-06-01T12:00:00",
+        "newState": "WAITING"
+    }
+}
+```
+
+#### 1.20 设备操作完成
+- **URL**: `/process/{id}/device-complete`
+- **方法**: `POST`
+- **描述**: 设备操作完成，唤醒等待中的进程，将状态从WAITING转为READY
+- **响应**:
+```json
+{
+    "success": true,
+    "message": "设备操作完成，进程已唤醒",
+    "data": {
+        "processId": 1,
+        "processName": "进程名称",
+        "newState": "READY",
+        "wakeupTime": "2023-06-01T12:05:00"
+    }
+}
+```
 
 ## 进程状态说明
 

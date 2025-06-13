@@ -3,10 +3,10 @@ package com.group.myos.process.controller;
 import com.group.myos.process.ProcessSwapper;
 import com.group.myos.process.model.Process;
 import com.group.myos.process.ProcessScheduler;
-import com.group.myos.process.model.ProcessTransition;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,13 +25,45 @@ public class ProcessController {
 
     // 进程管理API
     @PostMapping("")
-    public Process createProcess(@RequestBody Process process) {
-        return processScheduler.addProcess(process);
+    public ResponseEntity<Map<String, Object>> createProcess(@RequestBody Process process) {
+        // 确保基本字段不为空
+        if (process.getName() == null || process.getName().trim().isEmpty()) {
+            process.setName("Process-" + System.currentTimeMillis());
+        }
+        
+        if (process.getPriority() == null) {
+            process.setPriority(0);
+        }
+        
+        if (process.getMemorySize() == null) {
+            process.setMemorySize(10); // 默认内存大小
+        }
+        
+        Process newProcess = processScheduler.addProcess(process);
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("message", "操作成功");
+        response.put("data", newProcess);
+        return ResponseEntity.ok(response);
     }
 
     // 添加新的端点：创建进程并立即启动（设置为READY状态）
     @PostMapping("/create-and-start")
-    public Process createAndStartProcess(@RequestBody Process process) {
+    public ResponseEntity<Map<String, Object>> createAndStartProcess(@RequestBody Process process) {
+        // 确保基本字段不为空
+        if (process.getName() == null || process.getName().trim().isEmpty()) {
+            process.setName("Process-" + System.currentTimeMillis());
+        }
+        
+        if (process.getPriority() == null) {
+            process.setPriority(0);
+        }
+        
+        if (process.getMemorySize() == null) {
+            process.setMemorySize(10); // 默认内存大小
+        }
+        
         // 创建进程
         Process newProcess = processScheduler.addProcess(process);
         
@@ -40,37 +72,66 @@ public class ProcessController {
             processScheduler.updateProcessState(newProcess.getId(), Process.ProcessState.READY);
         }
         
-        return newProcess;
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("message", "操作成功");
+        response.put("data", newProcess);
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping("")
-    public List<Process> getAllProcesses() {
-        return processScheduler.getAllProcesses();
+    public ResponseEntity<Map<String, Object>> getAllProcesses() {
+        List<Process> processes = processScheduler.getAllProcesses();
+        processes = processes != null ? processes : new ArrayList<>();
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("message", "操作成功");
+        response.put("data", processes);
+        return ResponseEntity.ok(response);
     }
     
-    @GetMapping("ready")
-    public List<Process> getReadyProcesses() {
-        return processScheduler.getReadyProcesses();
-    }
-    
-    @GetMapping("waiting")
-    public List<Process> getWaitingProcesses() {
-        return processScheduler.getWaitingProcesses();
-    }
-    
-    @GetMapping("terminated")
-    public List<Process> getTerminatedProcesses() {
-        return processScheduler.getTerminatedProcesses();
-    }
-    
-    @GetMapping("swapped")
-    public List<Process> getSwappedProcesses() {
-        return processSwapper.getSwappedProcesses();
+    // 修改为使用路径参数获取特定状态的进程
+    @GetMapping("{state}")
+    public ResponseEntity<Map<String, Object>> getProcessesByState(@PathVariable String state) {
+        List<Process> processes = new ArrayList<>();
+        
+        switch(state.toLowerCase()) {
+            case "ready":
+                processes = processScheduler.getReadyProcesses();
+                break;
+            case "waiting":
+                processes = processScheduler.getWaitingProcesses();
+                break;
+            case "terminated":
+                processes = processScheduler.getTerminatedProcesses();
+                break;
+            case "swapped":
+                processes = processSwapper.getSwappedProcesses();
+                break;
+            default:
+                // 返回空列表，或者可以抛出异常
+                break;
+        }
+        
+        processes = processes != null ? processes : new ArrayList<>();
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("message", "操作成功");
+        response.put("data", processes);
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping("current")
-    public Process getCurrentProcess() {
-        return processScheduler.getCurrentProcess();
+    public ResponseEntity<Map<String, Object>> getCurrentProcess() {
+        Process currentProcess = processScheduler.getCurrentProcess();
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("message", "操作成功");
+        response.put("data", currentProcess);
+        return ResponseEntity.ok(response);
     }
     
     @DeleteMapping("{id}")
@@ -103,8 +164,14 @@ public class ProcessController {
     }
     
     @PostMapping("schedule")
-    public Process scheduleNextProcess() {
-        return processScheduler.schedule();
+    public ResponseEntity<Map<String, Object>> scheduleNextProcess() {
+        Process scheduledProcess = processScheduler.schedule();
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("message", "操作成功");
+        response.put("data", scheduledProcess);
+        return ResponseEntity.ok(response);
     }
     
     @PostMapping("{id}/block")
@@ -238,7 +305,7 @@ public class ProcessController {
     }
     
     @GetMapping("{id}/info")
-    public ResponseEntity<?> getProcessInfo(@PathVariable Long id) {
+    public ResponseEntity<Map<String, Object>> getProcessInfo(@PathVariable Long id) {
         Process process = processScheduler.getAllProcesses().stream()
                 .filter(p -> p.getId().equals(id))
                 .findFirst()
@@ -261,7 +328,11 @@ public class ProcessController {
         info.put("lastUpdateTime", process.getLastUpdateTime());
         info.put("inMemory", process.isInMemory());
         
-        return ResponseEntity.ok(info);
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("message", "操作成功");
+        response.put("data", info);
+        return ResponseEntity.ok(response);
     }
     
     @GetMapping("stats")
@@ -279,7 +350,11 @@ public class ProcessController {
         stats.put("terminatedProcesses", processScheduler.getTerminatedProcesses().size());
         stats.put("swappedProcesses", processSwapper.getSwappedProcesses().size());
         
-        return ResponseEntity.ok(stats);
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("message", "操作成功");
+        response.put("data", stats);
+        return ResponseEntity.ok(response);
     }
 
     // 恢复之前的交换相关端点
@@ -371,41 +446,114 @@ public class ProcessController {
 
     // 添加新的端点：获取进程状态转换历史
     @GetMapping("{id}/transitions")
-    public ResponseEntity<?> getProcessTransitions(@PathVariable Long id) {
-        // 获取进程状态转换历史
-        List<ProcessTransition> transitions = processScheduler.getProcessTransitionHistory(id);
-        
-        if (transitions.isEmpty()) {
+    public ResponseEntity<Map<String, Object>> getProcessTransitions(@PathVariable Long id) {
+        Process process = processScheduler.getAllProcesses().stream()
+                .filter(p -> p.getId().equals(id))
+                .findFirst()
+                .orElse(null);
+                
+        if (process == null) {
             Map<String, Object> response = new HashMap<>();
             response.put("success", false);
-            response.put("message", "未找到进程状态转换历史");
-            return ResponseEntity.ok(response);
+            response.put("message", "未找到进程: " + id);
+            return ResponseEntity.badRequest().body(response);
         }
-        
-        return ResponseEntity.ok(transitions);
-    }
-    
-    /**
-     * 控制自动调度功能
-     */
-    @PostMapping("/auto-schedule")
-    public ResponseEntity<Map<String, Object>> setAutoSchedule(@RequestParam boolean enabled) {
-        processScheduler.setAutoScheduleEnabled(enabled);
         
         Map<String, Object> response = new HashMap<>();
         response.put("success", true);
-        response.put("message", enabled ? "自动调度已启用" : "自动调度已禁用");
-        response.put("autoScheduleEnabled", processScheduler.isAutoScheduleEnabled());
+        response.put("message", "操作成功");
+        response.put("data", processScheduler.getProcessTransitionHistory(id));
+        return ResponseEntity.ok(response);
+    }
+
+    // 添加新的端点：运行中的进程调用设备
+    @PostMapping("{id}/request-device")
+    public ResponseEntity<Map<String, Object>> requestDevice(
+            @PathVariable Long id, 
+            @RequestParam String deviceType,
+            @RequestParam(required = false) Integer deviceId) {
+        
+        Process process = processScheduler.getAllProcesses().stream()
+                .filter(p -> p.getId().equals(id))
+                .findFirst()
+                .orElse(null);
+                
+        if (process == null) {
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "未找到进程: " + id);
+            return ResponseEntity.badRequest().body(response);
+        }
+        
+        // 检查进程是否处于运行状态
+        if (process.getState() != Process.ProcessState.RUNNING) {
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "只有运行中的进程可以请求设备");
+            return ResponseEntity.badRequest().body(response);
+        }
+        
+        // 模拟进程请求设备，将进程状态从RUNNING转为WAITING
+        processScheduler.blockProcess(process);
+        
+        // 记录设备请求信息（可以根据实际需求扩展）
+        process.setLastUpdateTime(java.time.LocalDateTime.now());
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("message", "进程已请求设备并转入等待状态");
+        
+        Map<String, Object> data = new HashMap<>();
+        data.put("processId", process.getId());
+        data.put("processName", process.getName());
+        data.put("deviceType", deviceType);
+        if (deviceId != null) {
+            data.put("deviceId", deviceId);
+        }
+        data.put("requestTime", process.getLastUpdateTime());
+        data.put("newState", process.getState().name());
+        
+        response.put("data", data);
         return ResponseEntity.ok(response);
     }
     
-    /**
-     * 获取自动调度状态
-     */
-    @GetMapping("/auto-schedule")
-    public ResponseEntity<Map<String, Object>> getAutoScheduleStatus() {
+    // 添加新的端点：设备操作完成，唤醒进程
+    @PostMapping("{id}/device-complete")
+    public ResponseEntity<Map<String, Object>> deviceOperationComplete(@PathVariable Long id) {
+        Process process = processScheduler.getAllProcesses().stream()
+                .filter(p -> p.getId().equals(id))
+                .findFirst()
+                .orElse(null);
+                
+        if (process == null) {
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "未找到进程: " + id);
+            return ResponseEntity.badRequest().body(response);
+        }
+        
+        // 检查进程是否处于等待状态
+        if (process.getState() != Process.ProcessState.WAITING) {
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "只有等待状态的进程可以被唤醒");
+            return ResponseEntity.badRequest().body(response);
+        }
+        
+        // 唤醒进程，将状态从WAITING转为READY
+        processScheduler.wakeUpProcess(process);
+        
         Map<String, Object> response = new HashMap<>();
-        response.put("autoScheduleEnabled", processScheduler.isAutoScheduleEnabled());
+        response.put("success", true);
+        response.put("message", "设备操作完成，进程已唤醒");
+        
+        Map<String, Object> data = new HashMap<>();
+        data.put("processId", process.getId());
+        data.put("processName", process.getName());
+        data.put("newState", process.getState().name());
+        data.put("wakeupTime", process.getLastUpdateTime());
+        
+        response.put("data", data);
         return ResponseEntity.ok(response);
     }
 }

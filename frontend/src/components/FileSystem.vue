@@ -71,6 +71,21 @@
 </template>
 
 <script>
+import {
+  getCurrentPath,
+  createDirectory,
+  changeDirectory,
+  listDirectory,
+  getDirectoryContent,
+  deleteDirectory,
+  createFile,
+  openFile,
+  closeFile,
+  getFileContent,
+  writeFileContent,
+  deleteFile
+} from '@/api/file'
+
 export default {
   name: 'FileSystem',
   data() {
@@ -95,13 +110,133 @@ export default {
       blockSize: 8,
       diskRows: [],
       blocksPerRow: 32,
-      updateInterval: null
+      currentPath: '/',
+      loading: false
     }
   },
   created() {
     this.initializeDisk()
+    this.loadDirectoryContent()
   },
   methods: {
+    async loadDirectoryContent() {
+      try {
+        this.loading = true
+        // 获取当前路径
+        const pathRes = await getCurrentPath()
+        this.currentPath = pathRes.data
+
+        // 获取目录内容
+        const contentRes = await getDirectoryContent()
+        if (contentRes.success) {
+          const { files, directories } = contentRes.content
+          
+          // 更新文件树
+          this.fileTree[0].children = [
+            ...directories.map(dir => ({
+              label: dir,
+              type: 'directory',
+              children: []
+            })),
+            ...files.map(file => ({
+              label: file.name,
+              type: 'file',
+              size: file.size,
+              isOpen: file.isOpen,
+              isAllocated: file.isAllocated
+            }))
+          ]
+
+          // 更新磁盘使用情况
+          this.usedSpace = files.reduce((sum, file) => sum + file.size, 0)
+          this.freeSpace = this.totalSpace - this.usedSpace
+        }
+      } catch (error) {
+        this.$message.error('加载目录内容失败：' + error.message)
+      } finally {
+        this.loading = false
+      }
+    },
+
+    async createFileOrDir() {
+      try {
+        this.loading = true
+        if (this.fileForm.type === 'directory') {
+          const res = await createDirectory({ name: this.fileForm.name })
+          if (res.success) {
+            this.$message.success('目录创建成功')
+            await this.loadDirectoryContent()
+          }
+        } else {
+          const res = await createFile({ name: this.fileForm.name })
+          if (res.success) {
+            this.$message.success('文件创建成功')
+            await this.loadDirectoryContent()
+          }
+        }
+        this.fileForm.name = ''
+      } catch (error) {
+        this.$message.error('创建失败：' + error.message)
+      } finally {
+        this.loading = false
+      }
+    },
+
+    async handleNodeClick(data) {
+      if (data.type === 'directory') {
+        try {
+          this.loading = true
+          const res = await changeDirectory({ path: data.label })
+          if (res.success) {
+            await this.loadDirectoryContent()
+          }
+        } catch (error) {
+          this.$message.error('切换目录失败：' + error.message)
+        } finally {
+          this.loading = false
+        }
+      } else if (data.type === 'file') {
+        try {
+          this.loading = true
+          const res = await openFile({ name: data.label })
+          if (res.success) {
+            const contentRes = await getFileContent({ name: data.label })
+            if (contentRes.success) {
+              this.$message.success('文件内容：' + contentRes.content)
+            }
+            await closeFile({ name: data.label })
+          }
+        } catch (error) {
+          this.$message.error('读取文件失败：' + error.message)
+        } finally {
+          this.loading = false
+        }
+      }
+    },
+
+    async deleteNode(node, data) {
+      try {
+        this.loading = true
+        if (data.type === 'directory') {
+          const res = await deleteDirectory({ name: data.label })
+          if (res.success) {
+            this.$message.success('目录删除成功')
+            await this.loadDirectoryContent()
+          }
+        } else {
+          const res = await deleteFile({ name: data.label })
+          if (res.success) {
+            this.$message.success('文件删除成功')
+            await this.loadDirectoryContent()
+          }
+        }
+      } catch (error) {
+        this.$message.error('删除失败：' + error.message)
+      } finally {
+        this.loading = false
+      }
+    },
+
     initializeDisk() {
       const totalBlocks = Math.ceil(this.totalSpace / this.blockSize)
       const rows = Math.ceil(totalBlocks / this.blocksPerRow)
@@ -114,75 +249,12 @@ export default {
         }))
       )
     },
-    createFileOrDir() {
-      const newNode = {
-        label: this.fileForm.name,
-        type: this.fileForm.type,
-        children: this.fileForm.type === 'directory' ? [] : undefined,
-        size: this.fileForm.type === 'file' ? this.fileForm.size : 0
-      }
-      
-      if (this.fileForm.type === 'file') {
-        this.allocateDiskSpace(newNode)
-      }
-      
-      this.fileTree[0].children.push(newNode)
-      this.fileForm.name = ''
-    },
-    deleteNode(node, data) {
-      if (data.type === 'file') {
-        this.freeDiskSpace(data)
-      }
-      const parent = node.parent
-      const children = parent.data.children || parent.data
-      const index = children.findIndex(d => d.label === data.label)
-      children.splice(index, 1)
-    },
-    handleNodeClick(data) {
-      console.log(data)
-    },
+
     getBlockTooltip(block) {
       if (block.status === 'ALLOCATED') {
         return `文件: ${block.fileId}\n大小: ${block.size}MB`
       }
       return '空闲块'
-    },
-    allocateDiskSpace(file) {
-      const blocksNeeded = Math.ceil(file.size / this.blockSize)
-      let allocatedBlocks = 0
-      
-      for (let row of this.diskRows) {
-        for (let block of row) {
-          if (block.status === 'FREE') {
-            block.status = 'ALLOCATED'
-            block.fileId = file.label
-            allocatedBlocks++
-            
-            if (allocatedBlocks === blocksNeeded) {
-              this.usedSpace += file.size
-              this.freeSpace -= file.size
-              return true
-            }
-          }
-        }
-      }
-      return false
-    },
-    freeDiskSpace(file) {
-      let freedSize = 0
-      
-      for (let row of this.diskRows) {
-        for (let block of row) {
-          if (block.status === 'ALLOCATED' && block.fileId === file.label) {
-            block.status = 'FREE'
-            block.fileId = null
-            freedSize += block.size
-          }
-        }
-      }
-      
-      this.usedSpace -= freedSize
-      this.freeSpace += freedSize
     }
   }
 }

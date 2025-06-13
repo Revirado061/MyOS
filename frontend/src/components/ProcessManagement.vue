@@ -209,8 +209,10 @@
 </template>
 
 <script>
-import { createProcess, getAllProcesses, getCurrentProcess } from '../api/process'
+import { createProcess, getAllProcesses, getCurrentProcess, getProcessesByState } from '../api/process'
 import { getAllDevices, allocateDevice, releaseDevice } from '../api/device'
+import axios from 'axios'
+
 export default {
   name: 'ProcessManagement',
   data() {
@@ -294,38 +296,52 @@ export default {
         this.$message.error('终止进程失败')
       }
     },
+    // 获取特定状态的进程
+    async getProcessesByState(state) {
+      try {
+        const response = await getProcessesByState(state)
+        if (response && response.success) {
+          return response.data
+        }
+        return []
+      } catch (error) {
+        console.error(`获取${state}状态进程失败:`, error)
+        return []
+      }
+    },
+    // 更新后的fetchProcesses方法
     async fetchProcesses() {
       try {
-        const response = await getAllProcesses()
-        
-        if (response) {
-          // 清空所有队列
-          this.readyQueue = []
-          this.runningQueue = []
-          this.blockedQueue = []
-          this.terminatedQueue = []
-          this.allProcesses = response
-          
-          // 根据进程状态分类
-          response.forEach(process => {
-            switch (process.state) {
-              case 'READY':
-                this.readyQueue.push(process)
-                break
-              case 'RUNNING':
-                this.runningQueue.push(process)
-                break
-              case 'BLOCKED':
-                this.blockedQueue.push(process)
-                break
-              case 'TERMINATED':
-                this.terminatedQueue.push(process)
-                break
-            }
-          })
-        }
+        // 并行获取所有状态的进程
+        const [readyProcesses, runningProcesses, blockedProcesses, terminatedProcesses] = await Promise.all([
+          this.getProcessesByState('READY'),
+          this.getProcessesByState('RUNNING'),
+          this.getProcessesByState('WAITING'),
+          this.getProcessesByState('TERMINATED')
+        ])
+
+        // 更新各个队列
+        this.readyQueue = readyProcesses
+        this.runningQueue = runningProcesses
+        this.blockedQueue = blockedProcesses
+        this.terminatedQueue = terminatedProcesses
+
+        // 合并所有进程用于表格显示
+        this.allProcesses = [
+          ...readyProcesses,
+          ...runningProcesses,
+          ...blockedProcesses,
+          ...terminatedProcesses
+        ]
       } catch (error) {
+        console.error('获取进程数据失败:', error)
         this.$message.error('获取进程数据失败')
+        // 清空所有队列
+        this.readyQueue = []
+        this.runningQueue = []
+        this.blockedQueue = []
+        this.terminatedQueue = []
+        this.allProcesses = []
       }
     },
     async createProcess() {
