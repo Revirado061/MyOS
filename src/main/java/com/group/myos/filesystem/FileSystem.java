@@ -11,18 +11,24 @@ public class FileSystem {
     private final Directory root;
     private Directory currentDirectory;
     private final MemoryManager memoryManager;
+    private static final int BLOCK_SIZE = 4096; // 4KB per block
+    private final Map<Integer, byte[]> diskBlocks; // 模拟磁盘块
+    private int nextBlockNumber;
 
     public FileSystem(MemoryManager memoryManager) {
         this.root = new Directory("/", null);
         this.currentDirectory = root;
         this.memoryManager = memoryManager;
+        this.diskBlocks = new HashMap<>();
+        this.nextBlockNumber = 0;
     }
 
     public boolean createFile(String name) {
         if (currentDirectory.getFiles().containsKey(name)) {
             return false;
         }
-        File file = new File(name);
+        String path = getCurrentPath() + "/" + name;
+        File file = new File(name, 0, path);
         currentDirectory.getFiles().put(name, file);
         return true;
     }
@@ -36,17 +42,54 @@ public class FileSystem {
         return true;
     }
 
-//    public boolean deleteFile(String name) {
-//        File file = currentDirectory.getFiles().remove(name);
-//        if (file != null) {
-//            memoryManager.freeMemoryForFile(file);
-//            return true;
-//        }
-//        return false;
-//    }
+    public boolean deleteFile(String name) {
+        File file = currentDirectory.getFiles().remove(name);
+        if (file != null) {
+            // 释放文件占用的磁盘块
+            if (file.getBlockNumbers() != null) {
+                for (int blockNumber : file.getBlockNumbers()) {
+                    diskBlocks.remove(blockNumber);
+                }
+            }
+            // 释放文件占用的内存
+            if (file.isAllocated()) {
+                memoryManager.freeMemoryForProcess(null); // 这里需要传入正确的Process对象
+            }
+            return true;
+        }
+        return false;
+    }
 
     public boolean deleteDirectory(String name) {
-        return currentDirectory.getSubdirectories().remove(name) != null;
+        Directory dir = currentDirectory.getSubdirectories().get(name);
+        if (dir != null) {
+            // 递归删除目录下的所有文件和子目录
+            deleteDirectoryRecursively(dir);
+            currentDirectory.getSubdirectories().remove(name);
+            return true;
+        }
+        return false;
+    }
+
+    private void deleteDirectoryRecursively(Directory dir) {
+        // 删除所有文件
+        for (File file : dir.getFiles().values()) {
+            if (file.getBlockNumbers() != null) {
+                for (int blockNumber : file.getBlockNumbers()) {
+                    diskBlocks.remove(blockNumber);
+                }
+            }
+            if (file.isAllocated()) {
+                memoryManager.freeMemoryForProcess(null);
+            }
+        }
+        dir.getFiles().clear();
+
+        // 递归删除子目录
+        for (Directory subDir : dir.getSubdirectories().values()) {
+            deleteDirectoryRecursively(subDir);
+        }
+        dir.getSubdirectories().clear();
     }
 
     public boolean changeDirectory(String path) {
@@ -79,34 +122,89 @@ public class FileSystem {
         return contents;
     }
 
-    public List<File> getFiles() {
-        return new ArrayList<>(currentDirectory.getFiles().values());
-    }
-
     public String readFileContent(String name) {
         File file = currentDirectory.getFiles().get(name);
-        if (file != null && file.getContent() != null) {
-            return new String(file.getContent());
+        if (file == null || !file.isOpen()) {
+            return null;
         }
-        return null; // 如果文件不存在或内容为空，返回 null
+
+        StringBuilder content = new StringBuilder();
+        if (file.getBlockNumbers() != null) {
+            for (int blockNumber : file.getBlockNumbers()) {
+                byte[] block = diskBlocks.get(blockNumber);
+                if (block != null) {
+                    content.append(new String(block));
+                }
+            }
+        }
+        return content.toString();
     }
 
-//    public boolean writeFileContent(String name, String content) {
-//        File file = currentDirectory.getFiles().get(name);
-//        if (file != null) {
-//            // 先释放原有内容占用的内存
-//            memoryManager.freeMemoryForFile(file);
-//            // 再尝试为新内容分配内存
-//            int newSize = content.getBytes().length;
-//            if (!memoryManager.allocateMemoryForFile(file, newSize)) {
-//                return false;
-//            }
-//            file.setContent(content.toCharArray()); // 确保内容被正确赋值
-//            file.setSize(file.calculateByteCount(content));
-//            return true;
-//        }
-//        return false;
-//    }
+    public boolean writeFileContent(String name, String content) {
+        File file = currentDirectory.getFiles().get(name);
+        if (file == null || !file.isOpen()) {
+            return false;
+        }
+
+        // 计算需要的块数
+        int contentSize = content.getBytes().length;
+        int requiredBlocks = (contentSize + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+        // 释放原有块
+        if (file.getBlockNumbers() != null) {
+            for (int blockNumber : file.getBlockNumbers()) {
+                diskBlocks.remove(blockNumber);
+            }
+        }
+
+        // 分配新块
+        int[] newBlockNumbers = new int[requiredBlocks];
+        for (int i = 0; i < requiredBlocks; i++) {
+            newBlockNumbers[i] = nextBlockNumber++;
+        }
+        file.setBlockNumbers(newBlockNumbers);
+
+        // 写入内容
+        byte[] contentBytes = content.getBytes();
+        for (int i = 0; i < requiredBlocks; i++) {
+            int start = i * BLOCK_SIZE;
+            int end = Math.min(start + BLOCK_SIZE, contentBytes.length);
+            byte[] blockContent = new byte[end - start];
+            System.arraycopy(contentBytes, start, blockContent, 0, end - start);
+            diskBlocks.put(newBlockNumbers[i], blockContent);
+        }
+
+        file.setSize(contentSize);
+        return true;
+    }
+
+    public boolean openFile(String name) {
+        File file = currentDirectory.getFiles().get(name);
+        if (file != null && !file.isOpen()) {
+            file.open();
+            return true;
+        }
+        return false;
+    }
+
+    public boolean closeFile(String name) {
+        File file = currentDirectory.getFiles().get(name);
+        if (file != null && file.isOpen()) {
+            file.close();
+            return true;
+        }
+        return false;
+    }
+
+    public String getCurrentPath() {
+        StringBuilder path = new StringBuilder();
+        Directory dir = currentDirectory;
+        while (dir != null && dir != root) {
+            path.insert(0, "/" + dir.getName());
+            dir = dir.getParent();
+        }
+        return path.length() == 0 ? "/" : path.toString();
+    }
 
     public Map<String, Object> getDirectoryContent() {
         Map<String, Object> result = new HashMap<>();
