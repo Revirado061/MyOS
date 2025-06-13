@@ -35,20 +35,15 @@ public class Process {
     // 无参构造函数
     public Process() {
         this.inMemory = true; // 默认进程在内存中
-        this.priority = 0; // 默认优先级为0
-        this.memorySize = 0; // 默认内存大小为0
-        this.state = ProcessState.NEW; // 默认状态为NEW
-        this.createTime = LocalDateTime.now(); // 设置创建时间为当前时间
-        this.lastUpdateTime = LocalDateTime.now(); // 设置最后更新时间为当前时间
     }
 
     // 包含 id 的构造函数
     public Process(Long id, String name, Integer priority, ProcessState state, Integer memorySize) {
         this.id = id;
         this.name = name;
-        this.priority = priority != null ? priority : 0;
-        this.state = state != null ? state : ProcessState.NEW;
-        this.memorySize = memorySize != null ? memorySize : 0;
+        this.priority = priority;
+        this.state = state;
+        this.memorySize = memorySize;
         this.createTime = LocalDateTime.now(); // 设置创建时间为当前时间
         this.lastUpdateTime = LocalDateTime.now(); // 设置最后更新时间为当前时间
         this.inMemory = true; // 默认进程在内存中

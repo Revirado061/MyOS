@@ -155,7 +155,7 @@ public class MemoryManagerTest {
     void testMemoryStatus() {
         // 测试内存状态数组
         assertTrue(memoryManager.allocateMemoryForProcess(process1, 16));
-        int[] status = memoryManager.getMemoryStatus();
+        long[] status = memoryManager.getMemoryStatus();
 
         // 验证前4个页（16MB）被分配
         for (int i = 0; i < 4; i++) {
