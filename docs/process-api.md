@@ -2,7 +2,7 @@
 
 
 ## 基本信息
-- 基础URL: `http://localhost:8080/api`
+- 基础URL: `http://localhost:8080`
 - 所有请求和响应均使用 JSON 格式
 - 认证方式：待定
 

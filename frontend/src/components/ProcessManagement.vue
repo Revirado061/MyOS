@@ -243,7 +243,7 @@ export default {
     // 组件创建时立即获取一次数据
     this.fetchProcesses()
     // 设置定时器，每1秒更新一次数据
-    this.timer = setInterval(this.fetchProcesses, 1000)
+    this.timer = setInterval(this.fetchProcesses, 30000)
   },
   beforeDestroy() {
     // 组件销毁前清除定时器

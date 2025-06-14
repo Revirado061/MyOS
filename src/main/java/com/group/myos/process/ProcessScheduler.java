@@ -3,8 +3,8 @@ package com.group.myos.process;
 import com.group.myos.memory.MemoryManager;
 import com.group.myos.process.model.Process;
 import com.group.myos.process.model.ProcessTransition;
-import com.group.myos.process.repository.ProcessRepository;
 import com.group.myos.process.repository.ProcessTransitionRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -13,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Component
 public class ProcessScheduler {
     private final PriorityBlockingQueue<Process> readyQueue;
@@ -24,55 +25,36 @@ public class ProcessScheduler {
     private final MemoryManager memoryManager;
     private final ProcessSwapper processSwapper;
     private final ProcessTransitionRepository transitionRepository;
-    private final ProcessRepository processRepository;
+    
+    // 标记是否需要自动调度
+    private volatile boolean autoScheduleEnabled = true;
     
     public ProcessScheduler(
             MemoryManager memoryManager, 
             ProcessSwapper processSwapper,
-            ProcessTransitionRepository transitionRepository,
-            ProcessRepository processRepository) {
+            ProcessTransitionRepository transitionRepository) {
         this.memoryManager = memoryManager;
         this.processSwapper = processSwapper;
         this.transitionRepository = transitionRepository;
-        this.processRepository = processRepository;
         this.readyQueue = new PriorityBlockingQueue<>(100, 
             Comparator.comparing(Process::getPriority).reversed());
         this.allProcesses = new ConcurrentHashMap<>();
         this.waitingProcesses = new ArrayList<>();
         this.terminatedProcesses = new ArrayList<>();
-        
-        // 初始化时从数据库加载所有进程
-        loadProcessesFromDatabase();
     }
     
     /**
-     * 从数据库加载所有进程
+     * 设置是否启用自动调度
      */
-    private void loadProcessesFromDatabase() {
-        List<Process> processes = processRepository.findAll();
-        for (Process process : processes) {
-            allProcesses.put(process.getId(), process);
-            
-            // 根据进程状态放入相应队列
-            switch (process.getState()) {
-                case READY:
-                    readyQueue.offer(process);
-                    break;
-                case WAITING:
-                    waitingProcesses.add(process);
-                    break;
-                case TERMINATED:
-                    terminatedProcesses.add(process);
-                    break;
-                case RUNNING:
-                    // 系统重启，之前运行的进程设置为就绪
-                    process.setState(Process.ProcessState.READY);
-                    readyQueue.offer(process);
-                    break;
-                default:
-                    break;
-            }
-        }
+    public void setAutoScheduleEnabled(boolean enabled) {
+        this.autoScheduleEnabled = enabled;
+    }
+    
+    /**
+     * 判断是否启用自动调度
+     */
+    public boolean isAutoScheduleEnabled() {
+        return autoScheduleEnabled;
     }
     
     /**
@@ -85,9 +67,6 @@ public class ProcessScheduler {
         process.setLastUpdateTime(now);
         process.setState(Process.ProcessState.NEW);
         
-        // 先保存进程到数据库以获取ID
-        process = processRepository.save(process);
-        
         // 检查内存是否足够
         int freeMemory = memoryManager.getFreeMemorySize();
         if (freeMemory < process.getMemorySize()) {
@@ -99,15 +78,12 @@ public class ProcessScheduler {
                 // 无法分配内存，设置进程为等待状态
                 process.setInMemory(false);
                 process.setState(Process.ProcessState.WAITING);
-                
                 waitingProcesses.add(process);
-                allProcesses.put(process.getId(), process);
-                
-                // 更新进程状态到数据库
-                processRepository.save(process);
                 
                 // 记录状态转换：NEW -> WAITING（内存不足）
-                recordTransition(process, Process.ProcessState.NEW, Process.ProcessState.WAITING, "内存不足");
+                if (process.getId() != null) {
+                    recordTransition(process, Process.ProcessState.NEW, Process.ProcessState.WAITING, "内存不足");
+                }
                 
                 return process;
             }
@@ -119,30 +95,43 @@ public class ProcessScheduler {
             // 内存分配失败，设置进程为等待状态
             process.setInMemory(false);
             process.setState(Process.ProcessState.WAITING);
-            
             waitingProcesses.add(process);
-            allProcesses.put(process.getId(), process);
-            
-            // 更新进程状态到数据库
-            processRepository.save(process);
             
             // 记录状态转换：NEW -> WAITING（内存分配失败）
-            recordTransition(process, Process.ProcessState.NEW, Process.ProcessState.WAITING, "内存分配失败");
+            if (process.getId() != null) {
+                recordTransition(process, Process.ProcessState.NEW, Process.ProcessState.WAITING, "内存分配失败");
+            }
             
             return process;
         }
         
-        // 内存分配成功，将进程设置为就绪状态
-        process.setState(Process.ProcessState.READY);
+        // 防止ID为空导致的NullPointerException
+        if (process.getId() == null) {
+            // 为进程生成一个临时ID
+            Long tempId = generateTempId();
+            process.setId(tempId);
+        }
         
-        readyQueue.offer(process);
         allProcesses.put(process.getId(), process);
         
-        // 更新进程状态到数据库
-        processRepository.save(process);
+        // 判断是否是第一个创建的进程（没有当前运行进程且就绪队列为空）
+        if (currentProcess == null && readyQueue.isEmpty()) {
+            // 第一个进程直接设置为运行状态
+            process.setState(Process.ProcessState.RUNNING);
+            currentProcess = process;
+            
+            // 记录状态转换：NEW -> RUNNING
+            recordTransition(process, Process.ProcessState.NEW, Process.ProcessState.RUNNING, "第一个进程直接运行");
+        } else {
+            // 非第一个进程，设置为就绪状态
+            process.setState(Process.ProcessState.READY);
+            readyQueue.offer(process);
+            
+            // 记录状态转换：NEW -> READY
+            recordTransition(process, Process.ProcessState.NEW, Process.ProcessState.READY, "进程创建并分配内存成功");
+        }
         
-        // 记录状态转换：NEW -> READY
-        recordTransition(process, Process.ProcessState.NEW, Process.ProcessState.READY, "进程创建并分配内存成功");
+        // 不触发自动调度，让第一个进程运行完后再调度其他进程
         
         return process;
     }
@@ -167,21 +156,23 @@ public class ProcessScheduler {
     /**
      * 调度下一个进程执行
      */
-    public Process schedule() {
+    public synchronized Process schedule() {
+        // 如果当前有运行中的进程，不进行调度
+        if (currentProcess != null && currentProcess.getState() == Process.ProcessState.RUNNING) {
+            return currentProcess;
+        }
+        
+        // 如果原来有进程在运行但状态不是RUNNING，说明它可能是另一个状态
         if (currentProcess != null) {
-            if (currentProcess.getState() == Process.ProcessState.RUNNING) {
-                // 将当前运行进程设置为就绪状态并放回队列
-                Process.ProcessState oldState = currentProcess.getState();
-                currentProcess.setState(Process.ProcessState.READY);
-                currentProcess.setLastUpdateTime(LocalDateTime.now());
+            if (currentProcess.getState() == Process.ProcessState.READY) {
+                // 如果是就绪状态，放回队列
                 readyQueue.offer(currentProcess);
                 
-                // 保存到数据库
-                processRepository.save(currentProcess);
-                
                 // 记录状态转换：RUNNING -> READY
-                recordTransition(currentProcess, oldState, Process.ProcessState.READY, "时间片用完");
+                recordTransition(currentProcess, Process.ProcessState.RUNNING, Process.ProcessState.READY, "时间片用完");
             }
+            // 设置当前进程为null，以便调度新进程
+            currentProcess = null;
         }
         
         // 从就绪队列获取最高优先级进程
@@ -203,9 +194,6 @@ public class ProcessScheduler {
             currentProcess.setState(Process.ProcessState.RUNNING);
             currentProcess.setLastUpdateTime(LocalDateTime.now());
             
-            // 保存到数据库
-            processRepository.save(currentProcess);
-            
             // 记录状态转换：READY -> RUNNING
             recordTransition(currentProcess, oldState, Process.ProcessState.RUNNING, "调度执行");
         }
@@ -225,6 +213,8 @@ public class ProcessScheduler {
         
         if (process.equals(currentProcess)) {
             currentProcess = null;
+            // 当前运行进程被阻塞，需要调度下一个进程
+            triggerAutoSchedule();
         } else {
             // 如果在就绪队列中，需要移除
             readyQueue.remove(process);
@@ -235,10 +225,7 @@ public class ProcessScheduler {
         process.setLastUpdateTime(LocalDateTime.now());
         waitingProcesses.add(process);
         
-        // 保存到数据库
-        processRepository.save(process);
-        
-        // 记录状态转换
+        // 记录状态转换：oldState -> WAITING
         recordTransition(process, oldState, Process.ProcessState.WAITING, "主动阻塞");
     }
     
@@ -250,30 +237,40 @@ public class ProcessScheduler {
             return;
         }
         
-        // 从等待队列移除
+        Process.ProcessState oldState = process.getState();
+        
+        // 从等待列表移除
         waitingProcesses.remove(process);
         
-        // 如果进程不在内存中，需要先加载回内存
+        // 如果进程不在内存中，尝试交换回内存
         if (!process.isInMemory()) {
+            int freeMemory = memoryManager.getFreeMemorySize();
+            if (freeMemory < process.getMemorySize()) {
+                // 内存不足，尝试交换出其他进程
+                processSwapper.autoSwapOut(process.getMemorySize(), getAllInMemoryProcesses());
+            }
+            
+            // 尝试加载进程回内存
             boolean swappedIn = processSwapper.swapIn(process);
             if (!swappedIn) {
-                // 交换失败，仍保持等待状态
+                // 交换失败，保持等待状态
                 waitingProcesses.add(process);
                 return;
             }
         }
         
         // 设置为就绪状态
-        Process.ProcessState oldState = process.getState();
         process.setState(Process.ProcessState.READY);
         process.setLastUpdateTime(LocalDateTime.now());
         readyQueue.offer(process);
         
-        // 保存到数据库
-        processRepository.save(process);
+        // 记录状态转换：WAITING -> READY
+        recordTransition(process, oldState, Process.ProcessState.READY, "唤醒");
         
-        // 记录状态转换
-        recordTransition(process, oldState, Process.ProcessState.READY, "进程唤醒");
+        // 只有当当前没有运行中的进程时，才考虑自动调度
+        if (currentProcess == null) {
+            triggerAutoSchedule();
+        }
     }
     
     /**
@@ -286,13 +283,31 @@ public class ProcessScheduler {
         
         Process.ProcessState oldState = process.getState();
         
-        // 从相应队列中移除
         if (process.equals(currentProcess)) {
             currentProcess = null;
-        } else if (process.getState() == Process.ProcessState.READY) {
+            // 当前运行的进程结束后，立即触发调度
+            triggerAutoSchedule();
+        } else {
+            // 可能在就绪队列或等待队列
             readyQueue.remove(process);
-        } else if (process.getState() == Process.ProcessState.WAITING) {
             waitingProcesses.remove(process);
+        }
+        
+        // 释放进程占用的内存（如果在内存中）
+        if (process.isInMemory()) {
+            memoryManager.freeMemoryForProcess(process);
+        } else {
+            // 移除交换文件
+            try {
+                if (process.getSwapFilePath() != null) {
+                    java.nio.file.Files.deleteIfExists(java.nio.file.Paths.get(process.getSwapFilePath()));
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+            
+            // 从已交换进程列表移除
+            processSwapper.getSwappedProcesses().remove(process);
         }
         
         // 设置为终止状态
@@ -300,38 +315,21 @@ public class ProcessScheduler {
         process.setLastUpdateTime(LocalDateTime.now());
         terminatedProcesses.add(process);
         
-        // 释放进程占用的内存
-        memoryManager.freeMemoryForProcess(process);
-        
-        // 保存到数据库
-        processRepository.save(process);
-        
-        // 记录状态转换
+        // 记录状态转换：oldState -> TERMINATED
         recordTransition(process, oldState, Process.ProcessState.TERMINATED, "进程终止");
     }
     
     /**
-     * 删除进程
+     * 删除进程（完全删除）
      */
     public void deleteProcess(Long processId) {
-        Process process = allProcesses.remove(processId);
+        Process process = allProcesses.get(processId);
         if (process != null) {
-            // 从相应队列中移除
-            if (process.equals(currentProcess)) {
-                currentProcess = null;
-            } else if (process.getState() == Process.ProcessState.READY) {
-                readyQueue.remove(process);
-            } else if (process.getState() == Process.ProcessState.WAITING) {
-                waitingProcesses.remove(process);
-            } else if (process.getState() == Process.ProcessState.TERMINATED) {
-                terminatedProcesses.remove(process);
-            }
-            
-            // 释放进程占用的内存
-            memoryManager.freeMemoryForProcess(process);
-            
-            // 从数据库中删除
-            processRepository.deleteById(processId);
+            // 先终止进程
+            terminateProcess(process);
+            // 从所有列表中移除
+            terminatedProcesses.remove(process);
+            allProcesses.remove(processId);
         }
     }
     
@@ -345,85 +343,75 @@ public class ProcessScheduler {
         }
         
         Process.ProcessState oldState = process.getState();
-        
-        // 如果状态没有变化，直接返回
         if (oldState == newState) {
-            return;
+            return; // 状态未变化
         }
         
-        // 根据新状态更新进程
-        switch (newState) {
-            case READY:
-                if (oldState == Process.ProcessState.WAITING) {
-                    waitingProcesses.remove(process);
-                } else if (oldState == Process.ProcessState.RUNNING) {
-                    currentProcess = null;
-                } else if (oldState == Process.ProcessState.TERMINATED) {
-                    terminatedProcesses.remove(process);
-                }
-                process.setState(Process.ProcessState.READY);
-                readyQueue.offer(process);
-                break;
-            
-            case WAITING:
-                if (oldState == Process.ProcessState.READY) {
-                    readyQueue.remove(process);
-                } else if (oldState == Process.ProcessState.RUNNING) {
-                    currentProcess = null;
-                } else if (oldState == Process.ProcessState.TERMINATED) {
-                    terminatedProcesses.remove(process);
-                }
-                process.setState(Process.ProcessState.WAITING);
-                waitingProcesses.add(process);
-                break;
-            
+        // 根据新旧状态进行不同处理
+        switch (oldState) {
             case RUNNING:
-                if (currentProcess != null && currentProcess.getState() == Process.ProcessState.RUNNING) {
-                    // 将当前运行进程设置为就绪
-                    currentProcess.setState(Process.ProcessState.READY);
-                    readyQueue.offer(currentProcess);
-                }
-                
-                if (oldState == Process.ProcessState.READY) {
-                    readyQueue.remove(process);
-                } else if (oldState == Process.ProcessState.WAITING) {
-                    waitingProcesses.remove(process);
-                } else if (oldState == Process.ProcessState.TERMINATED) {
-                    terminatedProcesses.remove(process);
-                }
-                
-                process.setState(Process.ProcessState.RUNNING);
-                currentProcess = process;
-                break;
-            
-            case TERMINATED:
-                if (oldState == Process.ProcessState.READY) {
-                    readyQueue.remove(process);
-                } else if (oldState == Process.ProcessState.WAITING) {
-                    waitingProcesses.remove(process);
-                } else if (oldState == Process.ProcessState.RUNNING) {
+                if (process.equals(currentProcess)) {
                     currentProcess = null;
+                    // 如果运行状态的进程改变状态，可能需要触发调度
+                    if (newState != Process.ProcessState.RUNNING) {
+                        triggerAutoSchedule();
+                    }
                 }
-                
-                process.setState(Process.ProcessState.TERMINATED);
-                terminatedProcesses.add(process);
-                
-                // 释放进程占用的内存
-                memoryManager.freeMemoryForProcess(process);
                 break;
-            
-            default:
+            case READY:
+                readyQueue.remove(process);
+                break;
+            case WAITING:
+                waitingProcesses.remove(process);
+                break;
+            case TERMINATED:
+                terminatedProcesses.remove(process);
                 break;
         }
         
-        // 更新进程的最后更新时间
+        // 设置新状态
+        process.setState(newState);
         process.setLastUpdateTime(LocalDateTime.now());
         
-        // 更新进程到数据库
-        processRepository.save(process);
+        // 根据新状态添加到相应队列
+        switch (newState) {
+            case READY:
+                readyQueue.offer(process);
+                break;
+            case RUNNING:
+                if (currentProcess != null && currentProcess.getState() == Process.ProcessState.RUNNING) {
+                    // 先将当前运行进程设置为就绪
+                    currentProcess.setState(Process.ProcessState.READY);
+                    readyQueue.offer(currentProcess);
+                    
+                    // 记录状态转换：RUNNING -> READY（抢占）
+                    recordTransition(currentProcess, Process.ProcessState.RUNNING, Process.ProcessState.READY, "被高优先级进程抢占");
+                }
+                currentProcess = process;
+                break;
+            case WAITING:
+                waitingProcesses.add(process);
+                break;
+            case TERMINATED:
+                // 如果新状态是终止，则调用终止方法进行处理
+                terminateProcess(process);
+                return; // terminateProcess内部已经处理了状态转换记录和触发调度
+        }
         
         // 记录状态转换
         recordTransition(process, oldState, newState, "状态更新");
+    }
+    
+    /**
+     * 触发自动调度
+     * 当进程状态发生变化时，如果启用了自动调度，则自动调用schedule()方法
+     */
+    private void triggerAutoSchedule() {
+        // 只有当没有运行中的进程时，才考虑自动调度
+        if (autoScheduleEnabled && currentProcess == null) {
+            log.debug("触发自动调度");
+            schedule();
+        }
     }
     
     /**
@@ -455,19 +443,10 @@ public class ProcessScheduler {
     }
     
     /**
-     * 获取所有进程
+     * 获取所有进程列表
      */
     public List<Process> getAllProcesses() {
-        // 从数据库获取最新进程列表
-        List<Process> processes = processRepository.findAll();
-        
-        // 更新内存中的进程映射
-        allProcesses.clear();
-        for (Process process : processes) {
-            allProcesses.put(process.getId(), process);
-        }
-        
-        return processes;
+        return new ArrayList<>(allProcesses.values());
     }
     
     /**
