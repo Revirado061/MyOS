@@ -63,7 +63,7 @@ public class TimerManager {
             currentTime++;
             
             // 发布设备超时检查事件
-            eventPublisher.publishEvent(new DeviceTimeoutEvent(this, currentTime));
+            eventPublisher.publishEvent(new DeviceTimeoutEvent(currentTime, null, "设备超时检查"));
 
             // 触发时钟中断
             if (currentTime % CLOCK_INTERRUPT_INTERVAL == 0) {

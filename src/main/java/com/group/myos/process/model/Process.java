@@ -20,9 +20,12 @@ public class Process {
 
     private Integer memorySize;
     private LocalDateTime createTime;
+    @Column(name = "last_update_time")
     private LocalDateTime lastUpdateTime;
     private boolean inMemory; // 是否在内存中，用于交换机制
     private String swapFilePath; // 交换文件路径
+    @Column(name = "waiting_reason")
+    private String waitingReason;
 
     public enum ProcessState {
         NEW,        // 新建
@@ -52,6 +55,15 @@ public class Process {
         this.createTime = LocalDateTime.now(); // 设置创建时间为当前时间
         this.lastUpdateTime = LocalDateTime.now(); // 设置最后更新时间为当前时间
         this.inMemory = true; // 默认进程在内存中
+    }
+
+    // Getters and Setters
+    public String getWaitingReason() {
+        return waitingReason;
+    }
+
+    public void setWaitingReason(String waitingReason) {
+        this.waitingReason = waitingReason;
     }
 
 }

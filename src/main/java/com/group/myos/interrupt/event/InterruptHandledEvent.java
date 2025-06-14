@@ -24,13 +24,21 @@ public class InterruptHandledEvent extends ApplicationEvent {
     private final String result;
 
     /**
+     * 中断处理的时间
+     * 描述中断处理所花费的时间
+     */
+    private final long processingTime;
+
+    /**
      * 构造函数
      * @param interrupt 被处理的中断对象
      * @param result 中断处理的结果
+     * @param processingTime 中断处理的时间
      */
-    public InterruptHandledEvent(Interrupt interrupt, String result) {
+    public InterruptHandledEvent(Interrupt interrupt, String result, long processingTime) {
         super(interrupt);
         this.interrupt = interrupt;
         this.result = result;
+        this.processingTime = processingTime;
     }
 } 

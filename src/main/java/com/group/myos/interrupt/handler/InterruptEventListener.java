@@ -2,6 +2,7 @@ package com.group.myos.interrupt.handler;
 
 import com.group.myos.interrupt.event.InterruptHandledEvent;
 import com.group.myos.interrupt.event.InterruptTriggeredEvent;
+import com.group.myos.interrupt.model.Interrupt;
 import com.group.myos.interrupt.model.InterruptLog;
 import com.group.myos.interrupt.model.InterruptType;
 import org.slf4j.Logger;
@@ -30,19 +31,12 @@ public class InterruptEventListener {
      */
     @EventListener
     public void handleInterruptTriggered(InterruptTriggeredEvent event) {
-        InterruptLog log = new InterruptLog(
-            logIdGenerator.getAndIncrement(),
-            event.getInterrupt().getId(),
-            event.getInterrupt().getType(),
-            System.currentTimeMillis(),
-            event.getInterrupt().getMessage(),
-            null
-        );
-        interruptLogs.add(log);
-        
-        logger.info("中断已触发: 类型={}, 消息={}", 
-            event.getInterrupt().getType(),
-            event.getInterrupt().getMessage());
+        Interrupt interrupt = event.getInterrupt();
+        logger.info("中断触发 - 类型: {}, 进程ID: {}, 原因: {}, 优先级: {}", 
+            interrupt.getType(),
+            interrupt.getData().get("processId"),
+            interrupt.getData().get("reason"),
+            interrupt.getType().getPriority());
     }
 
     /**
@@ -51,14 +45,12 @@ public class InterruptEventListener {
      */
     @EventListener
     public void handleInterruptHandled(InterruptHandledEvent event) {
-        interruptLogs.stream()
-            .filter(log -> log.getInterruptId().equals(event.getInterrupt().getId()))
-            .findFirst()
-            .ifPresent(log -> log.setResult(event.getResult()));
-        
-        logger.info("中断处理完成: 类型={}, 结果={}", 
-            event.getInterrupt().getType(),
-            event.getResult());
+        Interrupt interrupt = event.getInterrupt();
+        logger.info("中断处理完成 - 类型: {}, 进程ID: {}, 原因: {}, 处理时间: {}ms", 
+            interrupt.getType(),
+            interrupt.getData().get("processId"),
+            interrupt.getData().get("reason"),
+            event.getProcessingTime());
     }
 
     /**
