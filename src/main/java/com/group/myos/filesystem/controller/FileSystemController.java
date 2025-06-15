@@ -114,15 +114,36 @@ public class FileSystemController {
 
     // 读取文件内容
     @GetMapping("/file/content")
-    public ResponseEntity<?> readFileContent(@RequestParam String name) {
-        String content = fileSystem.readFileContent(name);
+    public ResponseEntity<?> readFileContent(
+            @RequestParam String name,
+            @RequestParam(required = false) Integer startBlock,
+            @RequestParam(required = false) Integer numBlocks) {
+        
         Map<String, Object> response = new HashMap<>();
-        if (content != null) {
-            response.put("success", true);
-            response.put("content", content);
+        
+        // 如果指定了分块参数，使用分块读取
+        if (startBlock != null && numBlocks != null) {
+            String content = fileSystem.readFileContentByChunk(name, startBlock, numBlocks);
+            if (content != null) {
+                response.put("success", true);
+                response.put("content", content);
+                response.put("startBlock", startBlock);
+                response.put("numBlocks", numBlocks);
+                response.put("totalBlocks", fileSystem.getFileBlockCount(name));
+            } else {
+                response.put("success", false);
+                response.put("message", "文件不存在或未打开");
+            }
         } else {
-            response.put("success", false);
-            response.put("message", "文件不存在或未打开");
+            // 使用原有的完整读取方式
+            String content = fileSystem.readFileContent(name);
+            if (content != null) {
+                response.put("success", true);
+                response.put("content", content);
+            } else {
+                response.put("success", false);
+                response.put("message", "文件不存在或未打开");
+            }
         }
         return ResponseEntity.ok(response);
     }

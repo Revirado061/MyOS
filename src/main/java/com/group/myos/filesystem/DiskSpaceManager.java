@@ -6,7 +6,7 @@ import java.util.*;
 @Component
 public class DiskSpaceManager {
     private static final long TOTAL_DISK_SIZE = 8L * 1024 * 1024 * 1024; // 8GB
-    private static final int BLOCK_SIZE = 32; // 32B per block
+    private static final int BLOCK_SIZE = 32 * 1024 * 1024; // 32MB per block
     private static final long TOTAL_BLOCKS = TOTAL_DISK_SIZE / BLOCK_SIZE;
 
     private final BitSet blockBitmap; // 位图，标记块的使用情况
@@ -130,5 +130,25 @@ public class DiskSpaceManager {
     // 获取文件占用的块
     public Set<Integer> getFileBlocks(int fileId) {
         return fileBlocks.getOrDefault(fileId, new HashSet<>());
+    }
+
+    // 获取总块数
+    public long getTotalBlocks() {
+        return TOTAL_BLOCKS;
+    }
+
+    // 获取已使用块数
+    public long getUsedBlocks() {
+        return blockBitmap.cardinality();
+    }
+
+    // 获取空闲块数
+    public long getFreeBlocks() {
+        return TOTAL_BLOCKS - getUsedBlocks();
+    }
+
+    // 获取磁盘使用百分比
+    public double getUsagePercentage() {
+        return (double) getUsedBlocks() / TOTAL_BLOCKS;
     }
 } 
