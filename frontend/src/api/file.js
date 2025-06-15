@@ -1,110 +1,100 @@
 import request from './config'
 
-// 获取当前目录路径
-export function getCurrentPath() {
+// 目录操作相关接口
+export const getCurrentPath = () => {
   return request({
     url: '/filesystem/current-path',
     method: 'get'
   })
 }
 
-// 创建目录
-export function createDirectory(data) {
+export const getDirectoryTree = () => {
+  return request({
+    url: '/filesystem/tree',
+    method: 'get'
+  })
+}
+
+export const createDirectory = (name) => {
   return request({
     url: '/filesystem/directory',
     method: 'post',
-    data
+    params: { name }
   })
 }
 
-// 切换目录
-export function changeDirectory(data) {
+export const changeDirectory = (path) => {
   return request({
     url: '/filesystem/change-directory',
     method: 'post',
-    data
+    params: { path }
   })
 }
 
-// 列出目录内容
-export function listDirectory() {
+export const listDirectory = () => {
   return request({
     url: '/filesystem/list',
     method: 'get'
   })
 }
 
-// 获取目录详细内容
-export function getDirectoryContent() {
-  return request({
-    url: '/filesystem/directory-content',
-    method: 'get'
-  })
-}
-
-// 删除目录
-export function deleteDirectory(data) {
+export const deleteDirectory = (name) => {
   return request({
     url: '/filesystem/directory',
     method: 'delete',
-    data
+    data: { name }
   })
 }
 
-// 创建文件
-export function createFile(data) {
+// 文件操作相关接口
+export const createFile = (name) => {
   return request({
     url: '/filesystem/file',
     method: 'post',
-    data
+    params: { name }
   })
 }
 
-// 打开文件
-export function openFile(data) {
+export const openFile = (name) => {
   return request({
     url: '/filesystem/file/open',
     method: 'post',
-    data
+    params: { name }
   })
 }
 
-// 关闭文件
-export function closeFile(data) {
+export const closeFile = (name) => {
   return request({
     url: '/filesystem/file/close',
     method: 'post',
-    data
+    params: { name }
   })
 }
 
-// 读取文件内容
-export function getFileContent(params) {
+export const readFileContent = (name) => {
   return request({
     url: '/filesystem/file/content',
     method: 'get',
-    params
+    params: { name }
   })
 }
 
-// 写入文件内容
-export function writeFileContent(name, content) {
+export const writeFileContent = (name, content) => {
   return request({
     url: '/filesystem/file/content',
     method: 'post',
     params: { name },
-    data: content,
+    data: content, // 直接传字符串
     headers: {
       'Content-Type': 'text/plain'
     }
   })
 }
 
-// 删除文件
-export function deleteFile(data) {
+export const deleteFile = (name) => {
   return request({
     url: '/filesystem/file',
     method: 'delete',
-    data
+    data: { name }
   })
 }

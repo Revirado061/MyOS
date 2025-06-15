@@ -8,12 +8,65 @@
 - **响应示例**：
 ```json
 {
-
     "data": "/docs/projects"
 }
 ```
 
-### 1.2 创建目录
+### 1.2 获取完整目录树
+- **请求方式**：GET
+- **URL**：`/filesystem/tree`
+- **响应示例**：
+```json
+{
+    "success": true,
+    "tree": {
+        "path": "/",
+        "children": [
+            {
+                "path": "/0613",
+                "children": [
+                    {
+                        "path": "/0613/1444",
+                        "children": [
+                            {
+                                "path": "/0613/1444/test",
+                                "children": [
+                                    {
+                                        "path": "/0613/1444/test/test123.txt",
+                                        "isOpen": true,
+                                        "size": 13,
+                                        "name": "test123.txt",
+                                        "isAllocated": true,
+                                        "type": "file"
+                                    },
+                                    {
+                                        "path": "/0613/1444/test/testABC.txt",
+                                        "isOpen": true,
+                                        "size": 31,
+                                        "name": "testABC.txt",
+                                        "isAllocated": true,
+                                        "type": "file"
+                                    }
+                                ],
+                                "name": "test",
+                                "type": "directory"
+                            }
+                        ],
+                        "name": "1444",
+                        "type": "directory"
+                    }
+                ],
+                "name": "0613",
+                "type": "directory"
+            }
+        ],
+        "name": "/",
+        "type": "directory"
+    }
+}
+```
+
+### 1.3 创建目录
 - **请求方式**：POST
 - **URL**：`/filesystem/directory`
 - **参数**：
@@ -26,7 +79,7 @@
 }
 ```
 
-### 1.3 切换目录
+### 1.4 切换目录
 - **请求方式**：POST
 - **URL**：`/filesystem/change-directory`
 - **参数**：
@@ -42,7 +95,7 @@
 }
 ```
 
-### 1.4 列出目录内容
+### 1.5 列出目录内容
 - **请求方式**：GET
 - **URL**：`/filesystem/list`
 - **响应示例**：
@@ -53,27 +106,8 @@
 }
 ```
 
-### 1.5 获取目录详细内容
-- **请求方式**：GET
-- **URL**：`/filesystem/directory-content`
-- **响应示例**：
-```json
-{
-    "success": true,
-    "content": {
-        "files": [
-            {
-                "name": "file1.txt",
-                "size": 1024,
-                "path": "/docs/file1.txt",
-                "isOpen": false,
-                "isAllocated": true
-            }
-        ],
-        "directories": ["docs", "projects"]
-    }
-}
-```
+
+
 
 ### 1.6 删除目录
 - **请求方式**：DELETE
@@ -207,7 +241,6 @@
    - 文件操作完成后应该关闭文件
    - 写入文件内容时需要设置正确的Content-Type
    - 所有请求都会返回布尔值（true/false）表示操作是否成功
-
 
 4. 路径说明：
    - 根目录："/"
