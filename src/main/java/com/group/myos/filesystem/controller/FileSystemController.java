@@ -155,4 +155,14 @@ public class FileSystemController {
         response.put("tree", tree);
         return ResponseEntity.ok(response);
     }
+
+    // 获取磁盘使用状态
+    @GetMapping("/disk-status")
+    public ResponseEntity<?> getDiskStatus() {
+        Map<String, Object> status = fileSystem.getDiskStatus();
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("status", status);
+        return ResponseEntity.ok(response);
+    }
 } 
