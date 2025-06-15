@@ -1,18 +1,19 @@
 package com.group.myos.device.event;
 
 import lombok.Getter;
-import org.springframework.context.ApplicationEvent;
-// 事件定义（DeviceTimeoutEvent）
+
 /**
  * 设备超时事件
- * 用于通知设备管理器检查设备超时
  */
 @Getter
-public class DeviceTimeoutEvent extends ApplicationEvent {
+public class DeviceTimeoutEvent {
     private final long currentTime;
+    private final Long deviceId;
+    private final String message;
 
-    public DeviceTimeoutEvent(Object source, long currentTime) {
-        super(source);
+    public DeviceTimeoutEvent(long currentTime, Long deviceId, String message) {
         this.currentTime = currentTime;
+        this.deviceId = deviceId;
+        this.message = message;
     }
 } 

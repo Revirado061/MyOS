@@ -5,8 +5,16 @@ import com.group.myos.interrupt.model.InterruptLog;
 import com.group.myos.interrupt.model.InterruptType;
 import com.group.myos.interrupt.event.InterruptTriggeredEvent;
 import com.group.myos.interrupt.event.InterruptHandledEvent;
+import com.group.myos.interrupt.event.ProcessSchedulingEvent;
+import com.group.myos.interrupt.event.ProcessTerminationEvent;
+import com.group.myos.interrupt.event.ProcessWaitingEvent;
+import com.group.myos.interrupt.event.ProcessReadyEvent;
+import com.group.myos.device.manager.DeviceManager;
+import com.group.myos.device.event.DeviceTimeoutEvent;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -19,6 +27,7 @@ import java.util.stream.Collectors;
  * 中断管理器
  * 负责中断的注册、触发、处理和日志记录
  */
+@Slf4j
 @Component
 public class InterruptManager {
     // 使用优先级队列，根据中断类型优先级排序
@@ -28,10 +37,15 @@ public class InterruptManager {
     private final List<InterruptLog> interruptLogs = new CopyOnWriteArrayList<>();
     private final AtomicLong interruptIdGenerator = new AtomicLong(0);
     private final AtomicLong logIdGenerator = new AtomicLong(0);
-    private static final long PROCESSING_DELAY = 3000; // 中断处理延迟3秒
+    private static final long PROCESSING_DELAY = 5000; // 中断处理延迟5秒
+    private static final int TIME_SLICE = 1; // 时间片长度（秒）
+    private static final int CLOCK_INTERRUPT_HANDLING_TIME = 50; // 时钟中断处理时间（毫秒）
 
     @Autowired
     private ApplicationEventPublisher eventPublisher;
+
+    @Autowired
+    private DeviceManager deviceManager; // 添加设备管理器依赖
 
     /**
      * 触发中断
@@ -46,7 +60,7 @@ public class InterruptManager {
             metadata.put("processId", processId);
         }
         if (data != null) {
-            metadata.put("data", data);
+            metadata.put("reason", data);  // 改用reason作为key
         }
         // 1. 创建中断对象
         Interrupt interrupt = new Interrupt(
@@ -85,7 +99,8 @@ public class InterruptManager {
                     updateLog(interrupt.getId(), result);
                     
                     // 3. 发布处理完成事件
-                    eventPublisher.publishEvent(new InterruptHandledEvent(interrupt, result));
+                    long processingTime = System.currentTimeMillis() - interrupt.getTimestamp();
+                    eventPublisher.publishEvent(new InterruptHandledEvent(interrupt, result, processingTime));
                 }
             }
         }
@@ -97,21 +112,159 @@ public class InterruptManager {
      * @return 处理结果
      */
     private String processInterrupt(Interrupt interrupt) {
-        switch (interrupt.getType()) {
-            case ERROR:
-                return String.format("错误中断处理完成，优先级: %d", interrupt.getType().getPriority());
-            case DEVICE:
-                return String.format("设备中断处理完成，优先级: %d", interrupt.getType().getPriority());
-            case IO:
-                return String.format("I/O中断处理完成，优先级: %d", interrupt.getType().getPriority());
-            case PROCESS:
-                return String.format("进程中断处理完成，优先级: %d", interrupt.getType().getPriority());
-            case CLOCK:
-                return String.format("时钟中断处理完成，优先级: %d", interrupt.getType().getPriority());
-            case OTHER:
-                return String.format("其他中断处理完成，优先级: %d", interrupt.getType().getPriority());
-            default:
-                return "未知中断类型";
+        String result;
+        try {
+            // 非时钟中断时增加处理延迟
+            if (interrupt.getType() != InterruptType.CLOCK) {
+                Thread.sleep(100); // 其他中断处理延迟100ms
+            }
+            
+            switch (interrupt.getType()) {
+                case ERROR:
+                    result = String.format("错误中断处理完成，优先级: %d", interrupt.getType().getPriority());
+                    handleProcessTermination(interrupt);
+                    break;
+                case DEVICE:
+                    result = String.format("设备中断处理完成，优先级: %d", interrupt.getType().getPriority());
+                    handleDeviceInterrupt(interrupt);
+                    break;
+                case IO:
+                    result = String.format("I/O中断处理完成，优先级: %d", interrupt.getType().getPriority());
+                    handleIOInterrupt(interrupt);
+                    break;
+                case PROCESS:
+                    result = String.format("进程中断处理完成，优先级: %d", interrupt.getType().getPriority());
+                    handleProcessInterrupt(interrupt);
+                    break;
+                case CLOCK:
+                    result = String.format("时钟中断处理完成，优先级: %d", interrupt.getType().getPriority());
+                    handleClockInterrupt(interrupt);
+                    break;
+                case OTHER:
+                    result = String.format("其他中断处理完成，优先级: %d", interrupt.getType().getPriority());
+                    handleOtherInterrupt(interrupt);
+                    break;
+                default:
+                    result = "未知中断类型";
+            }
+        } catch (InterruptedException e) {
+            log.error("中断处理被中断", e);
+            result = "中断处理被中断";
+        }
+        return result;
+    }
+
+    /**
+     * 处理进程终止
+     */
+    private void handleProcessTermination(Interrupt interrupt) {
+        Long processId = (Long) interrupt.getData().get("processId");
+        if (processId != null) {
+            // 发布进程终止事件
+            eventPublisher.publishEvent(new ProcessTerminationEvent(this, processId));
+            log.info("发布进程终止事件 - 进程ID: {}", processId);
+            
+            // 发布进程调度事件，调度下一个进程
+            eventPublisher.publishEvent(new ProcessSchedulingEvent(this));
+            log.info("发布进程调度事件 - 调度下一个进程");
+        }
+    }
+
+    /**
+     * 处理设备中断
+     */
+    private void handleDeviceInterrupt(Interrupt interrupt) {
+        Long processId = (Long) interrupt.getData().get("processId");
+        String deviceType = (String) interrupt.getData().get("deviceType");
+        
+        if (processId != null && deviceType != null) {
+            // 检查设备是否可用
+            if (deviceManager.isDeviceAvailable(deviceType)) {
+                // 设备可用，分配设备给进程
+                deviceManager.allocateDevice(deviceType, processId);
+                log.info("设备分配成功 - 进程ID: {}, 设备类型: {}", processId, deviceType);
+                
+                // 发布进程就绪事件，让进程继续运行
+                eventPublisher.publishEvent(new ProcessReadyEvent(this, processId));
+                log.info("发布进程就绪事件 - 进程ID: {}, 原因: 设备已分配", processId);
+            } else {
+                // 设备不可用，进程需要等待
+                eventPublisher.publishEvent(new ProcessWaitingEvent(this, processId, "等待设备: " + deviceType));
+                log.info("发布设备等待事件 - 进程ID: {}, 原因: 等待设备 {}", processId, deviceType);
+                
+                // 发布进程调度事件，调度下一个进程
+                eventPublisher.publishEvent(new ProcessSchedulingEvent(this));
+                log.info("发布进程调度事件 - 调度下一个进程");
+            }
+        }
+    }
+
+    /**
+     * 处理I/O中断
+     */
+    private void handleIOInterrupt(Interrupt interrupt) {
+        Long processId = (Long) interrupt.getData().get("processId");
+        if (processId != null) {
+            // 发布进程等待事件
+            eventPublisher.publishEvent(new ProcessWaitingEvent(this, processId, "等待I/O"));
+            log.info("发布I/O等待事件 - 进程ID: {}, 原因: 等待I/O", processId);
+            
+            // 发布进程调度事件，调度下一个进程
+            eventPublisher.publishEvent(new ProcessSchedulingEvent(this));
+            log.info("发布进程调度事件 - 调度下一个进程");
+        }
+    }
+
+    /**
+     * 处理进程中断
+     */
+    private void handleProcessInterrupt(Interrupt interrupt) {
+        Long processId = (Long) interrupt.getData().get("processId");
+        String reason = (String) interrupt.getData().get("reason");
+        if (processId != null) {
+            if ("HIGHER_PRIORITY_PROCESS".equals(reason)) {
+                // 高优先级进程到达，将当前进程设置为就绪状态
+                eventPublisher.publishEvent(new ProcessReadyEvent(this, processId));
+                log.info("发布进程就绪事件 - 进程ID: {}, 原因: 高优先级进程到达", processId);
+                
+                // 发布进程调度事件，调度高优先级进程
+                eventPublisher.publishEvent(new ProcessSchedulingEvent(this));
+                log.info("发布进程调度事件 - 调度高优先级进程");
+            } else {
+                // 其他进程中断，将进程设置为就绪状态
+                eventPublisher.publishEvent(new ProcessReadyEvent(this, processId));
+                log.info("发布进程就绪事件 - 进程ID: {}, 原因: {}", processId, reason);
+            }
+        }
+    }
+
+    /**
+     * 处理时钟中断
+     */
+    private void handleClockInterrupt(Interrupt interrupt) {
+        log.info("处理时钟中断，时间片长度: {}秒", TIME_SLICE);
+        try {
+            // 模拟时钟中断处理时间
+            Thread.sleep(CLOCK_INTERRUPT_HANDLING_TIME);
+            
+            // 发布进程调度事件
+            eventPublisher.publishEvent(new ProcessSchedulingEvent(this));
+            
+            // 记录中断处理完成
+            log.info("时钟中断处理完成，耗时: {}毫秒", CLOCK_INTERRUPT_HANDLING_TIME);
+        } catch (InterruptedException e) {
+            log.error("时钟中断处理被中断", e);
+        }
+    }
+
+    /**
+     * 处理其他中断
+     */
+    private void handleOtherInterrupt(Interrupt interrupt) {
+        Long processId = (Long) interrupt.getData().get("processId");
+        if (processId != null) {
+            // 发布进程就绪事件
+            eventPublisher.publishEvent(new ProcessReadyEvent(this, processId));
         }
     }
 
@@ -198,5 +351,16 @@ public class InterruptManager {
         interruptLogs.clear();
         interruptIdGenerator.set(0);
         logIdGenerator.set(0);
+    }
+
+    @EventListener
+    public void handleDeviceTimeoutEvent(DeviceTimeoutEvent event) {
+        // 触发设备中断
+        triggerInterrupt(
+            event.getDeviceId().intValue(),
+            InterruptType.DEVICE,
+            event.getDeviceId(),
+            event.getMessage()
+        );
     }
 }

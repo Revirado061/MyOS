@@ -11,7 +11,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -19,16 +22,25 @@ import java.util.stream.Collectors;
 
 /**
  * 设备管理器
- * 负责设备的分配、释放、状态管理和中断处理
+ * 负责管理设备的分配和可用性
  */
 @Slf4j
 @Component
 public class DeviceManager {
+    private static final Logger logger = LoggerFactory.getLogger(DeviceManager.class);
+    
+    // 设备类型及其可用数量
+    private final Map<String, Integer> devicePool = new ConcurrentHashMap<>();
+    
+    // 设备分配记录：设备类型 -> 进程ID
+    private final Map<String, Long> deviceAllocations = new ConcurrentHashMap<>();
+    
+    // 设备映射：设备ID -> 设备对象
     private final Map<Long, Device> devices = new ConcurrentHashMap<>();
-    @Autowired
-    private InterruptManager interruptManager;
+    
     @Autowired
     private ApplicationEventPublisher eventPublisher;
+    
     private static final int DEFAULT_TASK_DURATION = 10; // 默认任务时间10秒
 
     /**
@@ -95,6 +107,12 @@ public class DeviceManager {
         devices.put(8L, usb2);
 
         log.info("设备管理器初始化完成");
+
+        // 初始化设备池
+        devicePool.put("PRINTER", 2);    // 2台打印机
+        devicePool.put("SCANNER", 1);    // 1台扫描仪
+        devicePool.put("DISK", 3);       // 3个磁盘
+        devicePool.put("NETWORK", 5);    // 5个网络接口
     }
 
     /**
@@ -135,11 +153,12 @@ public class DeviceManager {
                         }
                         
                         // 触发设备释放中断
-                        interruptManager.triggerInterrupt(
-                            device.getId().intValue(),
-                            InterruptType.DEVICE,
-                            device.getId(),
-                            "设备 " + device.getId() + " 使用时间到，已自动释放"
+                        eventPublisher.publishEvent(
+                            new DeviceTimeoutEvent(
+                                currentTime,
+                                device.getId(),
+                                "设备 " + device.getId() + " 使用时间到，已自动释放"
+                            )
                         );
                     }
                 }
@@ -148,12 +167,21 @@ public class DeviceManager {
     }
 
     /**
+     * 分配设备给指定进程（使用默认超时时间）
+     * @param deviceId 设备ID
+     * @param processId 进程ID
+     * @return boolean 分配是否成功
+     */
+    public boolean allocateDevice(Long deviceId, Long processId) {
+        return allocateDevice(deviceId, processId, DEFAULT_TASK_DURATION);
+    }
+
+    /**
      * 分配设备给指定进程
-     * 功能：将指定设备分配给请求的进程，如果设备忙则将进程加入等待队列
-     * @param deviceId 设备ID，指定要分配的设备
-     * @param processId 进程ID，指定要使用设备的进程
-     * @param taskDuration 任务持续时间（秒），指定设备将被使用的时间
-     * @return boolean 分配是否成功，true表示成功分配，false表示加入等待队列
+     * @param deviceId 设备ID
+     * @param processId 进程ID
+     * @param taskDuration 任务持续时间（秒）
+     * @return boolean 分配是否成功
      */
     public boolean allocateDevice(Long deviceId, Long processId, Integer taskDuration) {
         Device device = devices.get(deviceId);
@@ -283,5 +311,118 @@ public class DeviceManager {
         usb.setRemainingTime(0);
         devices.put(7L, usb);
         log.info("设备管理器重置完成");
+    }
+
+    /**
+     * 根据设备类型分配设备
+     * @param deviceType 设备类型
+     * @param processId 进程ID
+     * @return 分配的设备，如果分配失败返回null
+     */
+    public Device allocateDeviceByType(String deviceType, Long processId) {
+        // 查找指定类型的空闲设备
+        Device device = devices.values().stream()
+            .filter(d -> d.getType().name().equals(deviceType) && d.getStatus() == DeviceStatus.IDLE)
+            .findFirst()
+            .orElse(null);
+            
+        if (device != null) {
+            device.setStatus(DeviceStatus.BUSY);
+            device.setCurrentProcessId(processId);
+            device.setLastUpdateTime(LocalDateTime.now());
+            return device;
+        }
+        
+        return null;
+    }
+
+    /**
+     * 根据设备类型释放设备
+     * @param deviceType 设备类型
+     * @param processId 进程ID
+     * @return 是否成功释放
+     */
+    public boolean releaseDeviceByType(String deviceType, Long processId) {
+        // 查找进程正在使用的指定类型的设备
+        Device device = devices.values().stream()
+            .filter(d -> d.getType().name().equals(deviceType) && d.getCurrentProcessId() == processId)
+            .findFirst()
+            .orElse(null);
+            
+        if (device != null) {
+            device.setStatus(DeviceStatus.IDLE);
+            device.setCurrentProcessId(null);
+            device.setLastUpdateTime(LocalDateTime.now());
+            return true;
+        }
+        
+        return false;
+    }
+
+    /**
+     * 检查设备是否可用
+     * @param deviceType 设备类型
+     * @return 设备是否可用
+     */
+    public boolean isDeviceAvailable(String deviceType) {
+        Integer availableCount = devicePool.get(deviceType);
+        if (availableCount == null) {
+            logger.warn("未知设备类型: {}", deviceType);
+            return false;
+        }
+        return availableCount > 0;
+    }
+    
+    /**
+     * 分配设备给进程
+     * @param deviceType 设备类型
+     * @param processId 进程ID
+     * @return 是否分配成功
+     */
+    public boolean allocateDevice(String deviceType, Long processId) {
+        if (!isDeviceAvailable(deviceType)) {
+            logger.warn("设备不可用 - 类型: {}, 进程ID: {}", deviceType, processId);
+            return false;
+        }
+        
+        // 减少可用设备数量
+        devicePool.compute(deviceType, (type, count) -> count - 1);
+        
+        // 记录设备分配
+        deviceAllocations.put(deviceType + "_" + processId, processId);
+        
+        logger.info("设备分配成功 - 类型: {}, 进程ID: {}", deviceType, processId);
+        return true;
+    }
+    
+    /**
+     * 释放设备
+     * @param deviceType 设备类型
+     * @param processId 进程ID
+     */
+    public void releaseDevice(String deviceType, Long processId) {
+        String key = deviceType + "_" + processId;
+        if (deviceAllocations.remove(key) != null) {
+            // 增加可用设备数量
+            devicePool.compute(deviceType, (type, count) -> count + 1);
+            logger.info("设备释放成功 - 类型: {}, 进程ID: {}", deviceType, processId);
+        }
+    }
+    
+    /**
+     * 获取设备可用数量
+     * @param deviceType 设备类型
+     * @return 可用数量
+     */
+    public int getAvailableDeviceCount(String deviceType) {
+        return devicePool.getOrDefault(deviceType, 0);
+    }
+    
+    /**
+     * 获取所有设备状态
+     * @return 设备状态映射
+     */
+    public Map<String, Integer> getAllDeviceStatus() {
+        return new ConcurrentHashMap<>(devicePool);
     }
 }

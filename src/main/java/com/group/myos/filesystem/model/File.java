@@ -6,7 +6,8 @@ import lombok.Setter;
 @Getter
 @Setter
 public class File {
-    private String name;           // 文件名
+    private int id;              // 文件ID
+    private String name;         // 文件名
     private int size;             // 文件大小（字节）
     private String path;          // 文件路径
     private boolean isOpen;       // 文件是否打开

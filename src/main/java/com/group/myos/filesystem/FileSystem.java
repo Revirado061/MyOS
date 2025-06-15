@@ -11,16 +11,15 @@ public class FileSystem {
     private final Directory root;
     private Directory currentDirectory;
     private final MemoryManager memoryManager;
-    private static final int BLOCK_SIZE = 4096; // 4KB per block
-    private final Map<Integer, byte[]> diskBlocks; // 模拟磁盘块
-    private int nextBlockNumber;
+    private final DiskSpaceManager diskSpaceManager;
+    private int nextFileId;
 
-    public FileSystem(MemoryManager memoryManager) {
+    public FileSystem(MemoryManager memoryManager, DiskSpaceManager diskSpaceManager) {
         this.root = new Directory("/", null);
         this.currentDirectory = root;
         this.memoryManager = memoryManager;
-        this.diskBlocks = new HashMap<>();
-        this.nextBlockNumber = 0;
+        this.diskSpaceManager = diskSpaceManager;
+        this.nextFileId = 1;
     }
 
     public boolean createFile(String name) {
@@ -29,6 +28,7 @@ public class FileSystem {
         }
         String path = getCurrentPath() + "/" + name;
         File file = new File(name, 0, path);
+        file.setId(nextFileId++);
         currentDirectory.getFiles().put(name, file);
         return true;
     }
@@ -47,13 +47,11 @@ public class FileSystem {
         if (file != null) {
             // 释放文件占用的磁盘块
             if (file.getBlockNumbers() != null) {
-                for (int blockNumber : file.getBlockNumbers()) {
-                    diskBlocks.remove(blockNumber);
-                }
+                diskSpaceManager.freeBlocks(file.getId());
             }
             // 释放文件占用的内存
             if (file.isAllocated()) {
-                memoryManager.freeMemoryForProcess(null); // 这里需要传入正确的Process对象
+                memoryManager.freeMemoryForProcess(null);
             }
             return true;
         }
@@ -75,9 +73,7 @@ public class FileSystem {
         // 删除所有文件
         for (File file : dir.getFiles().values()) {
             if (file.getBlockNumbers() != null) {
-                for (int blockNumber : file.getBlockNumbers()) {
-                    diskBlocks.remove(blockNumber);
-                }
+                diskSpaceManager.freeBlocks(file.getId());
             }
             if (file.isAllocated()) {
                 memoryManager.freeMemoryForProcess(null);
@@ -131,7 +127,7 @@ public class FileSystem {
         StringBuilder content = new StringBuilder();
         if (file.getBlockNumbers() != null) {
             for (int blockNumber : file.getBlockNumbers()) {
-                byte[] block = diskBlocks.get(blockNumber);
+                byte[] block = diskSpaceManager.readBlock(blockNumber);
                 if (block != null) {
                     content.append(new String(block));
                 }
@@ -147,31 +143,29 @@ public class FileSystem {
         }
 
         // 计算需要的块数
-        int contentSize = content.getBytes().length;
-        int requiredBlocks = (contentSize + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        byte[] contentBytes = content.getBytes();
+        int contentSize = contentBytes.length;
+        int requiredBlocks = (contentSize + diskSpaceManager.getBlockSize() - 1) / diskSpaceManager.getBlockSize();
 
         // 释放原有块
-        if (file.getBlockNumbers() != null) {
-            for (int blockNumber : file.getBlockNumbers()) {
-                diskBlocks.remove(blockNumber);
-            }
+        if (file.getBlockNumbers() != null && file.getBlockNumbers().length > 0) {
+            diskSpaceManager.freeBlocks(file.getId());
         }
 
         // 分配新块
-        int[] newBlockNumbers = new int[requiredBlocks];
-        for (int i = 0; i < requiredBlocks; i++) {
-            newBlockNumbers[i] = nextBlockNumber++;
+        int[] newBlockNumbers = diskSpaceManager.allocateBlocks(file.getId(), requiredBlocks);
+        if (newBlockNumbers.length == 0) {
+            return false; // 空间分配失败
         }
         file.setBlockNumbers(newBlockNumbers);
 
         // 写入内容
-        byte[] contentBytes = content.getBytes();
         for (int i = 0; i < requiredBlocks; i++) {
-            int start = i * BLOCK_SIZE;
-            int end = Math.min(start + BLOCK_SIZE, contentBytes.length);
+            int start = i * diskSpaceManager.getBlockSize();
+            int end = Math.min(start + diskSpaceManager.getBlockSize(), contentBytes.length);
             byte[] blockContent = new byte[end - start];
             System.arraycopy(contentBytes, start, blockContent, 0, end - start);
-            diskBlocks.put(newBlockNumbers[i], blockContent);
+            diskSpaceManager.writeBlock(newBlockNumbers[i], blockContent);
         }
 
         file.setSize(contentSize);
@@ -260,5 +254,10 @@ public class FileSystem {
             current = current.getParent();
         }
         return path.length() == 0 ? "/" : path.toString();
+    }
+
+    // 获取磁盘使用情况
+    public Map<String, Object> getDiskStatus() {
+        return diskSpaceManager.getDiskStatus();
     }
 }

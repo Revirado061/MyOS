@@ -3,10 +3,16 @@ package com.group.myos.process.controller;
 import com.group.myos.process.ProcessSwapper;
 import com.group.myos.process.model.Process;
 import com.group.myos.process.ProcessScheduler;
+import com.group.myos.device.manager.DeviceManager;
+import com.group.myos.device.model.Device;
+import com.group.myos.interrupt.model.InterruptType;
+import com.group.myos.interrupt.manager.InterruptManager;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -17,10 +23,19 @@ public class ProcessController {
     
     private final ProcessScheduler processScheduler;
     private final ProcessSwapper processSwapper;
+    private final DeviceManager deviceManager;
+    private final InterruptManager interruptManager;
     
-    public ProcessController(ProcessScheduler processScheduler, ProcessSwapper processSwapper) {
+    @Autowired
+    public ProcessController(
+            ProcessScheduler processScheduler, 
+            ProcessSwapper processSwapper,
+            DeviceManager deviceManager,
+            InterruptManager interruptManager) {
         this.processScheduler = processScheduler;
         this.processSwapper = processSwapper;
+        this.deviceManager = deviceManager;
+        this.interruptManager = interruptManager;
     }
 
     // 进程管理API
@@ -261,6 +276,7 @@ public class ProcessController {
             return ResponseEntity.badRequest().body(response);
         }
         
+        // 直接调用进程调度器终止进程
         processScheduler.terminateProcess(process);
         
         Map<String, Object> response = new HashMap<>();
@@ -273,11 +289,7 @@ public class ProcessController {
     public ResponseEntity<Map<String, Object>> updateProcessPriority(
             @PathVariable Long id, 
             @RequestParam Integer priority) {
-        Process process = processScheduler.getAllProcesses().stream()
-                .filter(p -> p.getId().equals(id))
-                .findFirst()
-                .orElse(null);
-                
+        Process process = processScheduler.getProcessById(id);
         if (process == null) {
             Map<String, Object> response = new HashMap<>();
             response.put("success", false);
@@ -285,22 +297,16 @@ public class ProcessController {
             return ResponseEntity.badRequest().body(response);
         }
         
-        Process.ProcessState oldState = process.getState();
+        // 使用ProcessScheduler的方法更新优先级
+        processScheduler.updateProcessPriority(id, priority);
         
-        if (oldState == Process.ProcessState.READY) {
-            processScheduler.updateProcessState(id, Process.ProcessState.WAITING);
-        }
-        
-        process.setPriority(priority);
-        process.setLastUpdateTime(java.time.LocalDateTime.now());
-        
-        if (oldState == Process.ProcessState.READY) {
-            processScheduler.updateProcessState(id, Process.ProcessState.READY);
-        }
+        // 获取更新后的进程信息
+        process = processScheduler.getProcessById(id);
         
         Map<String, Object> response = new HashMap<>();
         response.put("success", true);
         response.put("message", "进程优先级已更新");
+        response.put("data", process);
         return ResponseEntity.ok(response);
     }
     
@@ -357,6 +363,127 @@ public class ProcessController {
         return ResponseEntity.ok(response);
     }
 
+    /**
+     * 设置调度算法
+     */
+    @PutMapping("/scheduling-algorithm")
+    public ResponseEntity<Map<String, Object>> setSchedulingAlgorithm(@RequestParam String algorithm) {
+        try {
+            ProcessScheduler.SchedulingAlgorithm schedulingAlgorithm = 
+                ProcessScheduler.SchedulingAlgorithm.valueOf(algorithm.toUpperCase());
+            
+            processScheduler.setSchedulingAlgorithm(schedulingAlgorithm);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "调度算法已更新为: " + algorithm);
+            response.put("data", Map.of(
+                "algorithm", algorithm,
+                "description", algorithm.equals("FCFS") ? "先到先服务" : "优先级调度"
+            ));
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException e) {
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "无效的调度算法: " + algorithm);
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+
+    /**
+     * 获取当前调度算法
+     */
+    @GetMapping("/scheduling-algorithm")
+    public ResponseEntity<Map<String, Object>> getSchedulingAlgorithm() {
+        ProcessScheduler.SchedulingAlgorithm algorithm = processScheduler.getCurrentAlgorithm();
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("message", "操作成功");
+        response.put("data", Map.of(
+            "algorithm", algorithm.name(),
+            "description", algorithm == ProcessScheduler.SchedulingAlgorithm.FCFS ? "先到先服务" : "优先级调度"
+        ));
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 触发进程中断
+     */
+    @PostMapping("/{id}/interrupt")
+    public ResponseEntity<Map<String, Object>> interruptProcess(
+            @PathVariable Long id,
+            @RequestParam String reason) {
+        try {
+            Process process = processScheduler.getProcessById(id);
+            if (process == null) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "进程不存在");
+                return ResponseEntity.badRequest().body(response);
+            }
+            
+            // 检查进程是否处于运行状态
+            if (!process.equals(processScheduler.getCurrentProcess()) || process.getState() != Process.ProcessState.RUNNING) {
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", false);
+                response.put("message", "进程不在运行状态，无法触发中断");
+                return ResponseEntity.badRequest().body(response);
+            }
+            
+            processScheduler.interruptProcess(id, reason);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "进程中断已触发");
+            response.put("data", Map.of(
+                "processId", id,
+                "reason", reason,
+                "description", reason.equals("IO") ? "IO中断：进程变为等待状态" : "进程中断"
+            ));
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "触发中断失败: " + e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+    
+    /**
+     * 检查中断原因是否有效
+     */
+    private boolean isValidInterruptReason(String reason) {
+        return getValidInterruptReasons().contains(reason);
+    }
+    
+    /**
+     * 获取有效的中断原因列表
+     */
+    private List<String> getValidInterruptReasons() {
+        return Arrays.asList(
+            InterruptType.CLOCK.name(),     // 时钟中断，时间片用完，进程变为就绪状态
+            InterruptType.PROCESS.name(),   // 进程中断，高优先级进程到达，当前进程变为就绪状态
+            InterruptType.IO.name(),        // IO中断，进程变为等待状态
+            InterruptType.DEVICE.name(),    // 设备中断，进程变为等待状态
+            InterruptType.ERROR.name()      // 错误中断，进程被终止
+        );
+    }
+    
+    /**
+     * 获取中断原因的描述
+     */
+    private String getInterruptReasonDescription(String reason) {
+        Map<String, String> descriptions = Map.of(
+            InterruptType.CLOCK.name(), "时钟中断：时间片用完，进程变为就绪状态",
+            InterruptType.PROCESS.name(), "进程中断：高优先级进程到达，当前进程变为就绪状态",
+            InterruptType.IO.name(), "IO中断：进程变为等待状态",
+            InterruptType.DEVICE.name(), "设备中断：进程变为等待状态",
+            InterruptType.ERROR.name(), "错误中断：进程被终止"
+        );
+        return descriptions.getOrDefault(reason, "未知中断原因");
+    }
+
     // 恢复之前的交换相关端点
     @PostMapping("{id}/swapin")
     public ResponseEntity<Map<String, Object>> swapInProcess(@PathVariable Long id) {
@@ -409,33 +536,7 @@ public class ProcessController {
         Map<String, Object> results = new HashMap<>();
         
         priorityUpdates.forEach((id, priority) -> {
-            Process process = processScheduler.getAllProcesses().stream()
-                    .filter(p -> p.getId().equals(id))
-                    .findFirst()
-                    .orElse(null);
-                    
-            if (process == null) {
-                results.put(id.toString(), "未找到进程");
-                return;
-            }
-            
-            // 保存旧状态
-            Process.ProcessState oldState = process.getState();
-            
-            // 如果进程在就绪队列中，需要先移除再重新加入
-            if (oldState == Process.ProcessState.READY) {
-                processScheduler.updateProcessState(id, Process.ProcessState.WAITING);
-            }
-            
-            // 更新优先级
-            process.setPriority(priority);
-            process.setLastUpdateTime(java.time.LocalDateTime.now());
-            
-            // 重新设置状态，以便重新按优先级插入队列
-            if (oldState == Process.ProcessState.READY) {
-                processScheduler.updateProcessState(id, Process.ProcessState.READY);
-            }
-            
+            processScheduler.updateProcessPriority(id, priority);
             results.put(id.toString(), "优先级已更新为 " + priority);
         });
         
@@ -466,94 +567,99 @@ public class ProcessController {
         return ResponseEntity.ok(response);
     }
 
-    // 添加新的端点：运行中的进程调用设备
+    /**
+     * 请求设备
+     * @param id 进程ID
+     * @param deviceType 设备类型
+     * @return 设备分配结果
+     */
     @PostMapping("{id}/request-device")
     public ResponseEntity<Map<String, Object>> requestDevice(
-            @PathVariable Long id, 
-            @RequestParam String deviceType,
-            @RequestParam(required = false) Integer deviceId) {
-        
-        Process process = processScheduler.getAllProcesses().stream()
-                .filter(p -> p.getId().equals(id))
-                .findFirst()
-                .orElse(null);
-                
+            @PathVariable Long id,
+            @RequestParam String deviceType) {
+        Process process = processScheduler.getProcessById(id);
         if (process == null) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", false);
-            response.put("message", "未找到进程: " + id);
-            return ResponseEntity.badRequest().body(response);
+            return ResponseEntity.badRequest().body(Map.of(
+                "success", false,
+                "message", "进程不存在"
+            ));
         }
-        
+
         // 检查进程是否处于运行状态
         if (process.getState() != Process.ProcessState.RUNNING) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", false);
-            response.put("message", "只有运行中的进程可以请求设备");
-            return ResponseEntity.badRequest().body(response);
+            return ResponseEntity.badRequest().body(Map.of(
+                "success", false,
+                "message", "只有运行状态的进程才能请求设备"
+            ));
         }
-        
-        // 模拟进程请求设备，将进程状态从RUNNING转为WAITING
-        processScheduler.blockProcess(process);
-        
-        // 记录设备请求信息（可以根据实际需求扩展）
-        process.setLastUpdateTime(java.time.LocalDateTime.now());
-        
-        Map<String, Object> response = new HashMap<>();
-        response.put("success", true);
-        response.put("message", "进程已请求设备并转入等待状态");
-        
-        Map<String, Object> data = new HashMap<>();
-        data.put("processId", process.getId());
-        data.put("processName", process.getName());
-        data.put("deviceType", deviceType);
-        if (deviceId != null) {
-            data.put("deviceId", deviceId);
+
+        // 调用设备管理器分配设备
+        Device device = deviceManager.allocateDeviceByType(deviceType, id);
+        if (device != null) {
+            // 设备分配成功
+            return ResponseEntity.ok(Map.of(
+                "success", true,
+                "message", "设备分配成功",
+                "data", Map.of(
+                    "process", process,
+                    "device", device
+                )
+            ));
+        } else {
+            // 设备分配失败，进程进入等待状态
+            processScheduler.blockProcess(id, "等待设备: " + deviceType);
+            return ResponseEntity.ok(Map.of(
+                "success", true,
+                "message", "设备分配失败，进程进入等待状态",
+                "data", Map.of(
+                    "process", process,
+                    "deviceType", deviceType
+                )
+            ));
         }
-        data.put("requestTime", process.getLastUpdateTime());
-        data.put("newState", process.getState().name());
-        
-        response.put("data", data);
-        return ResponseEntity.ok(response);
     }
     
-    // 添加新的端点：设备操作完成，唤醒进程
-    @PostMapping("{id}/device-complete")
-    public ResponseEntity<Map<String, Object>> deviceOperationComplete(@PathVariable Long id) {
-        Process process = processScheduler.getAllProcesses().stream()
-                .filter(p -> p.getId().equals(id))
-                .findFirst()
-                .orElse(null);
-                
+    /**
+     * 释放设备
+     * @param id 进程ID
+     * @param deviceType 设备类型
+     * @return 设备释放结果
+     */
+    @PostMapping("{id}/release-device")
+    public ResponseEntity<Map<String, Object>> releaseDevice(
+            @PathVariable Long id,
+            @RequestParam String deviceType) {
+        Process process = processScheduler.getProcessById(id);
         if (process == null) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", false);
-            response.put("message", "未找到进程: " + id);
-            return ResponseEntity.badRequest().body(response);
+            return ResponseEntity.badRequest().body(Map.of(
+                "success", false,
+                "message", "进程不存在"
+            ));
         }
-        
-        // 检查进程是否处于等待状态
-        if (process.getState() != Process.ProcessState.WAITING) {
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", false);
-            response.put("message", "只有等待状态的进程可以被唤醒");
-            return ResponseEntity.badRequest().body(response);
+
+        // 调用设备管理器释放设备
+        boolean released = deviceManager.releaseDeviceByType(deviceType, id);
+        if (released) {
+            // 如果进程正在等待该类型的设备，则唤醒进程
+            if (process.getState() == Process.ProcessState.WAITING && 
+                process.getWaitingReason() != null && 
+                process.getWaitingReason().startsWith("等待设备: " + deviceType)) {
+                processScheduler.wakeupProcess(id);
+            }
+            
+            return ResponseEntity.ok(Map.of(
+                "success", true,
+                "message", "设备释放成功",
+                "data", Map.of(
+                    "process", process,
+                    "deviceType", deviceType
+                )
+            ));
+        } else {
+            return ResponseEntity.badRequest().body(Map.of(
+                "success", false,
+                "message", "设备释放失败，可能进程未持有该类型的设备"
+            ));
         }
-        
-        // 唤醒进程，将状态从WAITING转为READY
-        processScheduler.wakeUpProcess(process);
-        
-        Map<String, Object> response = new HashMap<>();
-        response.put("success", true);
-        response.put("message", "设备操作完成，进程已唤醒");
-        
-        Map<String, Object> data = new HashMap<>();
-        data.put("processId", process.getId());
-        data.put("processName", process.getName());
-        data.put("newState", process.getState().name());
-        data.put("wakeupTime", process.getLastUpdateTime());
-        
-        response.put("data", data);
-        return ResponseEntity.ok(response);
     }
 }
