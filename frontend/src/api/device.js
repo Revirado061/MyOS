@@ -25,21 +25,21 @@ export function getDeviceStatus(deviceId) {
   })
 }
 
-// 分配设备
-export function allocateDevice(data) {
+// 请求设备
+export function requestDevice(processId, deviceType) {
   return request({
-    url: '/device/allocate',
+    url: `/process/${processId}/request-device`,
     method: 'post',
-    data
+    data: { deviceType }
   })
 }
 
 // 释放设备
-export function releaseDevice(data) {
+export function releaseDevice(processId, deviceType) {
   return request({
-    url: '/device/release',
+    url: `/process/${processId}/release-device`,
     method: 'post',
-    data
+    data: { deviceType }
   })
 }
 
