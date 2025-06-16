@@ -165,9 +165,9 @@
               style="margin-left: 10px;"
               size="mini"
               type="primary"
+              :disabled="scope.row.state !== 'RUNNING'"
               @click="handleEnableDevice(scope.row)"
             >启用设备</el-button>
-            <!-- :disabled="scope.row.state !== 'RUNNING'" -->
             <el-button
               size="mini"
               type="danger"
@@ -179,7 +179,7 @@
       </el-table>
     </div>
 
-    <!-- 进程相关内容 -->
+    <!-- 设备管理相关内容 -->
     <el-dialog
       title="设备管理"
       :visible.sync="deviceDialogVisible"
@@ -189,11 +189,42 @@
         <el-table :data="devices" style="width: 100%">
           <el-table-column prop="id" label="设备ID" align="center" header-align="center" />
           <el-table-column prop="name" label="设备名称" align="center" header-align="center" />
-          <el-table-column prop="type" label="设备类型" align="center" header-align="center" />
-          <el-table-column prop="status" label="状态" align="center" header-align="center">
+          <el-table-column 
+            prop="type" 
+            label="设备类型" 
+            align="center" 
+            header-align="center"
+            :filters="[
+              { text: '打印机', value: 'PRINTER' },
+              { text: '磁盘', value: 'DISK' },
+              { text: '扫描仪', value: 'SCANNER' },
+              { text: '网络设备', value: 'NETWORK' },
+              { text: '其他', value: 'OTHER' }
+            ]"
+            :filter-method="filterDeviceType"
+            filter-placement="bottom"
+          >
+            <template slot-scope="scope">
+              {{ getDeviceTypeText(scope.row.type) }}
+            </template>
+          </el-table-column>
+          <el-table-column 
+            prop="status" 
+            label="状态" 
+            align="center" 
+            header-align="center"
+            :filters="[
+              { text: '空闲', value: 'IDLE' },
+              { text: '忙碌', value: 'BUSY' },
+              { text: '等待', value: 'WAITING' },
+              { text: '错误', value: 'ERROR' }
+            ]"
+            :filter-method="filterDeviceStatus"
+            filter-placement="bottom"
+          >
             <template slot-scope="scope">
               <el-tag :type="getStatusType(scope.row.status)">
-                {{ scope.row.status }}
+                {{ getDeviceStatusText(scope.row.status) }}
               </el-tag>
             </template>
           </el-table-column>
@@ -214,12 +245,12 @@
                 type="primary"
                 @click="showAllocateDialog(scope.row)"
                 :disabled="scope.row.status !== 'IDLE'">
-                分配
+                请求
               </el-button>
               <el-button
                 size="mini"
                 type="danger"
-                @click="handleRelease(scope.row)"
+                @click="handleReleaseDevice(scope.row.type)"
                 :disabled="scope.row.status === 'IDLE'">
                 释放
               </el-button>
@@ -258,7 +289,16 @@
 </template>
 
 <script>
-import { processApi, deviceApi, interruptApi } from '@/api/process_interrupt_device'
+import { processApi } from '@/api/process_interrupt_device'
+import { 
+  getAllDevices, 
+  getAvailableDevices, 
+  getDeviceStatus,
+  requestDevice,
+  releaseDevice,
+  getDevicesByType,
+  getDeviceInfo 
+} from '@/api/device'
 
 export default {
   name: 'ProcessManagement',
@@ -281,13 +321,14 @@ export default {
       allProcesses: [],
       timer: null,
       selectedState: 'ALL',
-      searchKeyword: '', // 添加搜索关键词
+      searchKeyword: '',
+      currentProcessId: null,
 
       // 设备管理相关
-      devices: [],                 // 设备列表
-      deviceDialogVisible: false, // 控制设备管理弹窗显示
+      devices: [],
+      deviceDialogVisible: false,
       allocateDialogVisible: false,
-      selectedDevice: null,        // 当前选中用于分配的设备
+      selectedDevice: null,
       allocateForm: {
         timeout: 5
       },
@@ -452,20 +493,28 @@ export default {
     // 设备管理相关方法
     async handleEnableDevice(row) {
       try {
+        this.currentProcessId = row.id
         await this.fetchDevices()
         this.deviceDialogVisible = true
       } catch (error) {
+        console.error('获取设备列表失败:', error)
         this.$message.error('获取设备列表失败')
       }
     },
 
     async fetchDevices() {
       try {
-        // 这里需要添加获取设备列表的API调用
-        // const response = await deviceApi.getDevices()
-        // this.devices = response.data || []
-        this.devices = [] // 临时使用空数组，等待设备API实现
+        const response = await getAllDevices()
+        console.log('response', response)
+        if (response.message) {
+          this.devices = response.data || []
+          console.log('devices', response.data)
+        } else {
+          this.$message.error(response.message || '获取设备列表失败')
+          this.devices = []
+        }
       } catch (error) {
+        console.error('获取设备列表失败:', error)
         this.$message.error('获取设备列表失败')
         this.devices = []
       }
@@ -474,9 +523,10 @@ export default {
     // 获取状态标签类型
     getStatusType(status) {
       const types = {
-        'IDLE': 'success',
-        'BUSY': 'warning',
-        'ERROR': 'danger'
+        'IDLE': 'success',    // 空闲状态
+        'BUSY': 'warning',    // 忙碌状态
+        'ERROR': 'danger',    // 错误状态
+        'WAITING': 'info'     // 等待状态
       }
       return types[status] || 'info'
     },
@@ -484,46 +534,48 @@ export default {
     // 弹出设备分配对话框
     showAllocateDialog(device) {
       this.selectedDevice = device
-      this.allocateForm.timeout = 5
+      this.allocateForm.timeout = 15
       this.allocateDialogVisible = true
     },
 
     // 确认分配设备
     async handleAllocate() {
-      if (!this.selectedDevice) return
-
       try {
-        const response = await deviceApi.requestDevice(
+        if (!this.selectedDevice) {
+          this.$message.error('未选择设备')
+          return
+        }
+
+        const response = await requestDevice(
+          this.currentProcessId,
           this.selectedDevice.id,
-          this.selectedDevice.type
+          this.allocateForm.timeout
         )
         
         if (response.success) {
           this.$message.success('设备分配成功')
           this.allocateDialogVisible = false
-          // 刷新设备和进程数据
-          await Promise.all([
-            this.fetchDevices(),
-            this.fetchProcesses()
-          ])
+          // 刷新设备列表
+          await this.fetchDevices()
         } else {
           this.$message.error(response.message || '设备分配失败')
         }
       } catch (error) {
+        console.error('设备分配失败:', error)
         this.$message.error('设备分配失败')
       }
     },
 
     // 释放设备
-    async handleRelease(device) {
+    async handleReleaseDevice(deviceType) {
       try {
-        const response = await deviceApi.releaseDevice(
-          device.id,
-          device.type
+        const response = await releaseDevice(
+          this.currentProcessId,
+          deviceType
         )
         
         if (response.success) {
-          this.$message.success('设备释放成功')
+          this.$message.success(response.message || '设备释放成功')
           // 刷新设备和进程数据
           await Promise.all([
             this.fetchDevices(),
@@ -533,6 +585,7 @@ export default {
           this.$message.error(response.message || '设备释放失败')
         }
       } catch (error) {
+        console.error('设备释放失败:', error)
         this.$message.error('设备释放失败')
       }
     },
@@ -577,6 +630,39 @@ export default {
         this.$message.error('调度算法设置失败，请稍后再试');
         this.schedulingAlgorithm = originalValue; // 出错也回退
       }
+    },
+
+    // 设备类型筛选
+    filterDeviceType(value, row) {
+      return row.type === value
+    },
+
+    // 设备状态筛选
+    filterDeviceStatus(value, row) {
+      return row.status === value
+    },
+
+    // 获取设备状态文本
+    getDeviceStatusText(status) {
+      const statuses = {
+        'IDLE': '空闲',
+        'BUSY': '忙碌',
+        'WAITING': '等待',
+        'ERROR': '错误'
+      }
+      return statuses[status] || status
+    },
+
+    // 获取设备类型文本
+    getDeviceTypeText(type) {
+      const types = {
+        'PRINTER': '打印机',
+        'DISK': '磁盘',
+        'SCANNER': '扫描仪',
+        'NETWORK': '网络设备',
+        'OTHER': '其他'
+      }
+      return types[type] || type
     },
   }
 }

@@ -17,13 +17,6 @@
           <file-system></file-system>
         </div>
       </el-tab-pane>
-      
-      <el-tab-pane label="设备与中断" name="device">
-        <div class="tab-content">
-          <system-clock></system-clock>
-          <device-management></device-management>
-        </div>
-      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
@@ -33,7 +26,6 @@ import SystemClock from './components/SystemClock.vue'
 import ProcessManagement from './components/ProcessManagement.vue'
 import MemoryManagement from './components/MemoryManagement.vue'
 import FileSystem from './components/FileSystem.vue'
-import DeviceManagement from './components/DeviceManagement.vue'
 
 export default {
   name: 'App',
@@ -42,7 +34,6 @@ export default {
     ProcessManagement,
     MemoryManagement,
     FileSystem,
-    DeviceManagement
   },
   data() {
     return {
