@@ -42,7 +42,7 @@ export const deleteDirectory = (name) => {
   return request({
     url: '/filesystem/directory',
     method: 'delete',
-    data: { name }
+    params: { name }
   })
 }
 
@@ -80,14 +80,16 @@ export const readFileContent = (name) => {
 }
 
 export const writeFileContent = (name, content) => {
+  console.log('传给后端前的内容：', content)
   return request({
     url: '/filesystem/file/content',
     method: 'post',
     params: { name },
-    data: content, // 直接传字符串
+    data: content,
     headers: {
       'Content-Type': 'text/plain'
-    }
+    },
+    // transformRequest: [(data) => data] // 禁用自动字符串化
   })
 }
 
@@ -95,6 +97,13 @@ export const deleteFile = (name) => {
   return request({
     url: '/filesystem/file',
     method: 'delete',
-    data: { name }
+    params: { name }
+  })
+}
+
+export const getDiskStatus = () => {
+  return request({
+    url: '/filesystem/disk-status',
+    method: 'get'
   })
 }

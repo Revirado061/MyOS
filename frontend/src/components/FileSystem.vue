@@ -19,7 +19,8 @@
       <!-- 第三行：创建目录/文件按钮 -->
       <div style="margin-bottom: 12px; display: flex; gap: 12px;">
         <el-button type="success" size="small" @click="showCreateDir = !showCreateDir">创建目录</el-button>
-        <el-button type="primary" size="small" @click="showCreateFileDialog = true">创建文件</el-button>
+        <el-button type="primary" size="small" @click="showCreateFile = !showCreateFile">创建文件</el-button>
+        <el-button type="warning" size="small" @click="showWriteContentDialog = true">写入文件内容</el-button>
       </div>
       <!-- 第四行：创建目录输入框 -->
       <div v-if="showCreateDir" style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
@@ -28,19 +29,26 @@
         <el-button type="success" size="small" @click="handleCreateDirectory">提交</el-button>
         <el-button size="small" @click="showCreateDir = false">取消</el-button>
       </div>
-      <!-- 创建文件对话框 -->
-      <el-dialog title="创建文件" :visible.sync="showCreateFileDialog" width="800px" @open="handleDialogOpen" @close="handleDialogClose">
+      <!-- 创建文件输入框 -->
+      <div v-if="showCreateFile" style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+        <span>文件名称：</span>
+        <el-input v-model="createFileName" size="small" style="width: 200px;"></el-input>
+        <el-button type="primary" size="small" @click="handleCreateFile">提交</el-button>
+        <el-button size="small" @click="showCreateFile = false">取消</el-button>
+      </div>
+      <!-- 写入文件内容对话框 -->
+      <el-dialog title="写入文件内容" :visible.sync="showWriteContentDialog" width="800px" @close="resetWriteContentDialog">
         <el-form label-width="80px">
           <el-form-item label="文件名称">
-            <el-input v-model="createFileName"></el-input>
+            <el-input v-model="writeFileName"></el-input>
           </el-form-item>
           <el-form-item label="文件内容">
-            <el-input type="textarea" v-model="createFileContent" :rows="6"></el-input>
+            <el-input type="textarea" v-model="writeFileContent" :rows="6"></el-input>
           </el-form-item>
         </el-form>
         <div slot="footer" class="dialog-footer">
-          <el-button @click="showCreateFileDialog = false">取消</el-button>
-          <el-button type="primary" @click="handleCreateFile">创建</el-button>
+          <el-button @click="showWriteContentDialog = false">取消</el-button>
+          <el-button type="primary" @click="handleWriteContent">写入</el-button>
         </div>
       </el-dialog>
       <!-- 文件树结构保持不变 -->
@@ -176,9 +184,11 @@ export default {
       isEditing: false,
       showCreateDir: false,
       createDirName: '',
-      showCreateFileDialog: false,
+      showCreateFile: false,
       createFileName: '',
-      createFileContent: '',
+      showWriteContentDialog: false,
+      writeFileName: '',
+      writeFileContent: '',
       changeDirInput: ''
     }
   },
@@ -257,12 +267,23 @@ export default {
         try {
           await openFile(data.name)
           const response = await readFileContent(data.name)
+          console.log('后端返回的完整响应:', response)
+          console.log('响应类型:', typeof response)
+          console.log('content类型:', typeof response.content)
+          console.log('content值:', response.content)
           if (response.success) {
             this.currentFile = data.name
-            this.fileContent = response.content
-            console.log(this.fileContent)
+            let content = response.content || ''
+            console.log('处理前的content:', content)
+            // 删除所有空字符（\u0000）
+            content = content.replace(/\0/g, '')
+            // 删除字符串开头和结尾的引号
+            content = content.replace(/^"|"$/g, '')
+            this.fileContent = content
+            console.log('处理后的文件内容:', this.fileContent)
           }
         } catch (error) {
+          console.error('打开文件错误:', error)
           this.$message.error('打开文件失败')
         }
       }
@@ -334,35 +355,42 @@ export default {
       }
     },
 
-    handleDialogOpen() {
-      console.log('对话框打开时的内容:', this.createFileContent)
-    },
-
-    handleDialogClose() {
-      console.log('对话框关闭时的内容:', this.createFileContent)
-      this.resetCreateFileDialog()
-    },
-
     async handleCreateFile() {
-      console.log('创建文件前的名称:', this.createFileName)
-      console.log('创建文件前的内容:', this.createFileContent)
+      if (!this.createFileName) {
+        this.$message.warning('请输入文件名称')
+        return
+      }
       try {
         await createFile(this.createFileName)
-        const content = this.createFileContent || ' '  // 确保内容不为空
-        await writeFileContent(this.createFileName, content)
-        console.log('创建文件后的内容:', content)
-        this.showCreateFileDialog = false
+        this.$message.success('文件创建成功')
+        this.showCreateFile = false
+        this.createFileName = ''
         this.fetchFileTree()
-        this.fetchCurrentPath()
       } catch (error) {
         console.error('创建文件错误:', error)
         this.$message.error('创建文件失败')
       }
     },
 
-    resetCreateFileDialog() {
-      this.createFileName = ''
-      this.createFileContent = ''
+    async handleWriteContent() {
+      if (!this.writeFileName || !this.writeFileContent) {
+        this.$message.warning('文件名称和内容不能为空')
+        return
+      }
+      try {
+        await writeFileContent(this.writeFileName, this.writeFileContent)
+        this.$message.success('文件内容写入成功')
+        this.showWriteContentDialog = false
+        this.fetchFileTree()
+      } catch (error) {
+        console.error('写入文件内容错误:', error)
+        this.$message.error('写入文件内容失败')
+      }
+    },
+
+    resetWriteContentDialog() {
+      this.writeFileName = ''
+      this.writeFileContent = ''
     }
   },
   watch: {

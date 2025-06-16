@@ -3,6 +3,7 @@ package com.group.myos.filesystem.controller;
 import com.group.myos.filesystem.FileSystem;
 import com.group.myos.filesystem.model.File;
 import jakarta.annotation.Resource;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -127,7 +128,7 @@ public class FileSystemController {
         return ResponseEntity.ok(response);
     }
 
-    // 写入文件内容
+//     写入文件内容
     @PostMapping("/file/content")
     public ResponseEntity<?> writeFileContent(
             @RequestParam String name,
@@ -145,6 +146,26 @@ public class FileSystemController {
         response.put("message", result ? "文件写入成功" : "文件不存在或未打开");
         return ResponseEntity.ok(response);
     }
+//    @PostMapping(value = "/file/content", consumes = MediaType.TEXT_PLAIN_VALUE)
+//    public ResponseEntity<?> writeFileContent(
+//            @RequestParam String name,
+//            @RequestBody(required = false) String content) {
+//
+//        if (content == null || content.trim().isEmpty()) {
+//            Map<String, Object> response = new HashMap<>();
+//            response.put("success", false);
+//            response.put("message", "文件内容不能为空");
+//            return ResponseEntity.badRequest().body(response);
+//        }
+//
+//        boolean result = fileSystem.writeFileContent(name, content);
+//
+//        Map<String, Object> response = new HashMap<>();
+//        response.put("success", result);
+//        response.put("message", result ? "文件写入成功" : "文件不存在或未打开");
+//
+//        return ResponseEntity.ok(response);
+//    }
 
     // 获取完整目录树
     @GetMapping("/tree")
@@ -165,4 +186,4 @@ public class FileSystemController {
         response.put("status", status);
         return ResponseEntity.ok(response);
     }
-} 
+}
