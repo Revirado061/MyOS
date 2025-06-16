@@ -13,7 +13,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="内存大小">
-          <el-input-number v-model="processForm.memorySize" :min="1" :max="1024" :step="64"></el-input-number>
+          <el-input-number v-model="processForm.memorySize" :min="1" :max="1024" :step="1"></el-input-number>
           <span class="unit">MB</span>
         </el-form-item>
         <el-form-item>
@@ -77,16 +77,52 @@
     </div>
 
     <div class="process-list">
-      <h3>进程列表</h3>
+      <div class="process-list-header">
+        <h3>进程列表</h3>
+        <div class="scheduling-algorithm">
+          <span class="label">调度算法：</span>
+          <el-select 
+            v-model="schedulingAlgorithm" 
+            @change="handleSchedulingAlgorithmChange" 
+            size="small"
+            placeholder="请选择调度算法"
+          >
+            <el-option 
+              v-for="item in schedulingOptions" 
+              :key="item.value" 
+              :label="item.label" 
+              :value="item.value"
+            ></el-option>
+          </el-select>
+        </div>
+      </div>
       <el-table 
         :data="allProcesses" 
         style="width: 100%" 
         border
         height="280"
       >
-        <el-table-column prop="id" label="进程ID" width="100" align="center"></el-table-column>
+        <el-table-column 
+          prop="id" 
+          label="进程ID" 
+          width="100" 
+          align="center"
+          sortable
+        ></el-table-column>
         <el-table-column prop="name" label="进程名称" width="100" align="center"></el-table-column>
-        <el-table-column prop="priority" label="优先级" width="80" align="center">
+        <el-table-column 
+          prop="priority" 
+          label="优先级" 
+          width="80" 
+          align="center"
+          :filters="[
+            { text: '高', value: 1 },
+            { text: '中', value: 2 },
+            { text: '低', value: 3 }
+          ]"
+          :filter-method="filterPriority"
+          filter-placement="bottom"
+        >
           <template slot-scope="scope">
             <el-tag :type="getPriorityType(scope.row.priority)">
               P{{ scope.row.priority }}
@@ -98,7 +134,20 @@
             {{ scope.row.memorySize }}MB
           </template>
         </el-table-column>
-        <el-table-column prop="state" label="状态" width="120" align="center">
+        <el-table-column 
+          prop="state" 
+          label="状态" 
+          width="120" 
+          align="center"
+          :filters="[
+            { text: '就绪', value: 'READY' },
+            { text: '运行中', value: 'RUNNING' },
+            { text: '阻塞', value: 'BLOCKED' },
+            { text: '已终止', value: 'TERMINATED' }
+          ]"
+          :filter-method="filterState"
+          filter-placement="bottom"
+        >
           <template slot-scope="scope">
             <el-tag :type="getStateType(scope.row.state)">
               {{ getStateText(scope.row.state) }}
@@ -113,12 +162,12 @@
         <el-table-column label="操作" align="center" width="200">
           <template slot-scope="scope">
             <el-button
+              style="margin-left: 10px;"
               size="mini"
               type="primary"
               @click="handleEnableDevice(scope.row)"
-              :disabled="scope.row.state === 'TERMINATED'"
-              style="margin-left: 10px;"
-            >启用设备</el-button> <!-- 添加启用设备按钮 -->
+            >启用设备</el-button>
+            <!-- :disabled="scope.row.state !== 'RUNNING'" -->
             <el-button
               size="mini"
               type="danger"
@@ -209,9 +258,7 @@
 </template>
 
 <script>
-import { createProcess, getAllProcesses, getCurrentProcess, getProcessesByState } from '../api/process'
-import { getAllDevices, allocateDevice, releaseDevice } from '../api/device'
-import axios from 'axios'
+import { processApi, deviceApi, interruptApi } from '@/api/process_interrupt_device'
 
 export default {
   name: 'ProcessManagement',
@@ -222,12 +269,19 @@ export default {
         priority: 2,
         memorySize: 64
       },
+      schedulingAlgorithm: '',
+      schedulingOptions: [
+        { label: '先到先服务 (FCFS)', value: 'FCFS' },
+        { label: '优先级调度 (PRIORITY)', value: 'PRIORITY' }
+      ],
       readyQueue: [],
       runningQueue: [],
       blockedQueue: [],
       terminatedQueue: [],
       allProcesses: [],
       timer: null,
+      selectedState: 'ALL',
+      searchKeyword: '', // 添加搜索关键词
 
       // 设备管理相关
       devices: [],                 // 设备列表
@@ -239,10 +293,41 @@ export default {
       },
     }
   },
-  created() {
-    // 组件创建时立即获取一次数据
+  computed: {
+    filteredProcesses() {
+      let result = this.allProcesses
+      
+      // 状态筛选
+      if (this.selectedState !== 'ALL') {
+        result = result.filter(process => process.state === this.selectedState)
+      }
+      
+      // 关键词搜索
+      if (this.searchKeyword) {
+        const keyword = this.searchKeyword.toLowerCase()
+        result = result.filter(process => 
+          process.name.toLowerCase().includes(keyword)
+        )
+      }
+      
+      return result
+    },
+  },
+  async created() {
+    try {
+      // 先获取当前调度算法
+      const response = await processApi.getSchedulingAlgorithm()
+      if (response.success) {
+        this.schedulingAlgorithm = response.data.algorithm
+      }
+    } catch (error) {
+      console.error('获取调度算法失败:', error)
+      this.schedulingAlgorithm = 'FCFS' // 如果获取失败，设置默认值
+    }
+    
+    // 获取进程数据
     this.fetchProcesses()
-    // 设置定时器，每1秒更新一次数据
+    // 设置定时器，每30秒更新一次数据
     this.timer = setInterval(this.fetchProcesses, 30000)
   },
   beforeDestroy() {
@@ -284,55 +369,53 @@ export default {
       const date = new Date(timestamp)
       return date.toLocaleString()
     },
-    // 前后端连接-进程
+
+    // 进程操作相关方法
     async handleTerminate(process) {
       try {
-        // 这里需要调用后端API来终止进程
-        // const response = await terminateProcess(process.id)
-        this.$message.success(`进程 ${process.name} 已终止`)
-        await this.fetchProcesses()
+        const response = await processApi.terminateProcess(process.id)
+        if (response.success) {
+          this.$message.success(response.message || `进程 ${process.name} 已终止`)
+          // 更新进程列表
+          await this.fetchProcesses()
+          // 如果当前进程在运行队列中，清空运行队列
+          if (this.runningQueue.some(p => p.id === process.id)) {
+            this.runningQueue = []
+          }
+        } else {
+          this.$message.error(response.message || '终止进程失败')
+        }
       } catch (error) {
-        // console.error('终止进程失败:', error)
+        console.error('终止进程错误:', error)
         this.$message.error('终止进程失败')
       }
     },
+
     // 获取特定状态的进程
     async getProcessesByState(state) {
       try {
-        const response = await getProcessesByState(state)
-        if (response && response.success) {
-          return response.data
-        }
-        return []
+        const response = await processApi.getProcessesByState(state)
+        return response.data || []
       } catch (error) {
         console.error(`获取${state}状态进程失败:`, error)
         return []
       }
     },
+
     // 更新后的fetchProcesses方法
     async fetchProcesses() {
       try {
-        // 并行获取所有状态的进程
-        const [readyProcesses, runningProcesses, blockedProcesses, terminatedProcesses] = await Promise.all([
-          this.getProcessesByState('READY'),
-          this.getProcessesByState('RUNNING'),
-          this.getProcessesByState('WAITING'),
-          this.getProcessesByState('TERMINATED')
-        ])
+        // 获取所有进程
+        const allResponse = await processApi.getAllProcesses()
+        this.allProcesses = allResponse.data || []
 
-        // 更新各个队列
-        this.readyQueue = readyProcesses
-        this.runningQueue = runningProcesses
-        this.blockedQueue = blockedProcesses
-        this.terminatedQueue = terminatedProcesses
-
-        // 合并所有进程用于表格显示
-        this.allProcesses = [
-          ...readyProcesses,
-          ...runningProcesses,
-          ...blockedProcesses,
-          ...terminatedProcesses
-        ]
+        // 获取各状态进程
+        this.readyQueue = await this.getProcessesByState('ready')
+        // 使用 getCurrentProcess 获取运行中的进程
+        const currentProcessResponse = await processApi.getCurrentProcess()
+        this.runningQueue = currentProcessResponse.data ? [currentProcessResponse.data] : []
+        this.blockedQueue = await this.getProcessesByState('waiting')
+        this.terminatedQueue = await this.getProcessesByState('terminated')
       } catch (error) {
         console.error('获取进程数据失败:', error)
         this.$message.error('获取进程数据失败')
@@ -344,48 +427,45 @@ export default {
         this.allProcesses = []
       }
     },
+
     async createProcess() {
       try {
-        const newProcess = {
+        const response = await processApi.createProcess({
           name: this.processForm.name,
           priority: this.processForm.priority,
-          memorySize: this.processForm.memorySize, //* 1024
-        }
-        console.log('创建进程数据:', newProcess)
+          memorySize: this.processForm.memorySize,
+        })
         
-        // 调用后端 API 创建进程
-        const response = await createProcess(newProcess)
-        console.log('创建进程响应:', response)
-        
-        // 如果创建成功，将进程添加到就绪队列
-        if (response) {
-          this.readyQueue.push(response)
-          this.processForm.name = ''
+        if (response.success) {
           this.$message.success('进程创建成功')
+          this.processForm.name = ''
+          // 立即刷新数据
+          await this.fetchProcesses()
+        } else {
+          this.$message.error(response.message || '创建进程失败')
         }
       } catch (error) {
-        // console.error('创建进程失败:', error)
         this.$message.error('创建进程失败，请重试')
       }
     },
     
-    // 启动设备调用
+    // 设备管理相关方法
     async handleEnableDevice(row) {
-      // 你也可以根据row.id传入进程ID来筛选相关设备
-      await this.fetchDevices()
-      this.deviceDialogVisible = true
+      try {
+        await this.fetchDevices()
+        this.deviceDialogVisible = true
+      } catch (error) {
+        this.$message.error('获取设备列表失败')
+      }
     },
-    // 获取设备列表
+
     async fetchDevices() {
       try {
-        const response = await getAllDevices()
-        if (response && response.data) {
-          this.devices = response.data
-        } else {
-          this.devices = []
-        }
+        // 这里需要添加获取设备列表的API调用
+        // const response = await deviceApi.getDevices()
+        // this.devices = response.data || []
+        this.devices = [] // 临时使用空数组，等待设备API实现
       } catch (error) {
-        // console.error('获取设备列表失败:', error)
         this.$message.error('获取设备列表失败')
         this.devices = []
       }
@@ -401,19 +481,6 @@ export default {
       return types[status] || 'info'
     },
 
-    // 获取中断类型标签
-    getInterruptType(type) {
-      const types = {
-        'IO': 'warning',
-        'TIMER': 'primary',
-        'ERROR': 'danger',
-        'DEVICE': 'warning',
-        'PROCESS': 'info',
-        'CLOCK': 'primary'
-      }
-      return types[type] || 'info'
-    },
-
     // 弹出设备分配对话框
     showAllocateDialog(device) {
       this.selectedDevice = device
@@ -426,25 +493,23 @@ export default {
       if (!this.selectedDevice) return
 
       try {
-        const data = {
-          deviceId: this.selectedDevice.id,
-          processId: 1, // TODO: 这里请改为当前选中进程的ID
-          timeout: this.allocateForm.timeout
-        }
-
-        const response = await allocateDevice(data)
-        if (response) {
+        const response = await deviceApi.requestDevice(
+          this.selectedDevice.id,
+          this.selectedDevice.type
+        )
+        
+        if (response.success) {
           this.$message.success('设备分配成功')
-          this.addInterrupt({
-            type: 'DEVICE',
-            message: `设备 ${this.selectedDevice.name} 已被分配给进程 ${data.processId}，运行时间 ${data.timeout} 秒`,
-            time: new Date().toLocaleTimeString()
-          })
           this.allocateDialogVisible = false
-          await this.fetchDevices()
+          // 刷新设备和进程数据
+          await Promise.all([
+            this.fetchDevices(),
+            this.fetchProcesses()
+          ])
+        } else {
+          this.$message.error(response.message || '设备分配失败')
         }
       } catch (error) {
-        // console.error('设备分配失败:', error)
         this.$message.error('设备分配失败')
       }
     },
@@ -452,34 +517,67 @@ export default {
     // 释放设备
     async handleRelease(device) {
       try {
-        const data = {
-          deviceId: device.id,
-          processId: device.currentProcessId
-        }
-
-        const response = await releaseDevice(data)
-        if (response) {
+        const response = await deviceApi.releaseDevice(
+          device.id,
+          device.type
+        )
+        
+        if (response.success) {
           this.$message.success('设备释放成功')
-          this.addInterrupt({
-            type: 'DEVICE',
-            message: `设备 ${device.name} 已被释放`,
-            time: new Date().toLocaleTimeString()
-          })
-          await this.fetchDevices()
+          // 刷新设备和进程数据
+          await Promise.all([
+            this.fetchDevices(),
+            this.fetchProcesses()
+          ])
+        } else {
+          this.$message.error(response.message || '设备释放失败')
         }
       } catch (error) {
-        // console.error('设备释放失败:', error)
         this.$message.error('设备释放失败')
       }
     },
 
-    // 添加中断日志（最多保留10条）
-    addInterrupt(interrupt) {
-      this.interrupts.unshift(interrupt)
-      if (this.interrupts.length > 10) {
-        this.interrupts.pop()
+    handleSearch() {
+      // 可以在这里添加额外的搜索逻辑
+    },
+
+    // 添加状态筛选方法
+    filterState(value, row) {
+      return row.state === value
+    },
+
+    // 添加优先级筛选方法
+    filterPriority(value, row) {
+      return row.priority === value
+    },
+
+    // 处理调度算法变更
+
+    async handleSchedulingAlgorithmChange(newValue) {
+      console.log('用户选择的调度算法:', newValue);
+
+      const originalValue = this.schedulingAlgorithm; // 保留原始值以便回退
+
+      try {
+        const response = await processApi.setSchedulingAlgorithm(newValue);
+
+        if (response?.success) {
+          this.$message.success(response.message || '调度算法设置成功');
+          this.schedulingAlgorithm = newValue; // 显式设置为新值（以防同步问题）
+          
+          // 刷新进程数据，确保新算法生效
+          await this.fetchProcesses();
+        } else {
+          this.$message.error(response.message || '调度算法设置失败');
+          this.schedulingAlgorithm = originalValue; // 回退
+        }
+
+      } catch (error) {
+        console.error('设置调度算法失败:', error);
+        this.$message.error('调度算法设置失败，请稍后再试');
+        this.schedulingAlgorithm = originalValue; // 出错也回退
       }
-    }
+    },
   }
 }
 </script>
@@ -621,13 +719,36 @@ export default {
   overflow: hidden;
 }
 
-.process-list h3 {
-  margin: 0;
+.process-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   padding: 10px;
   border-bottom: 1px solid #ebeef5;
+  background-color: #f5f7fa;
+}
+
+.process-list-header h3 {
+  margin: 0;
   color: #303133;
   font-size: 16px;
 }
+
+.scheduling-algorithm {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.scheduling-algorithm .label {
+  color: #606266;
+  font-size: 14px;
+}
+
+.scheduling-algorithm .el-select {
+  width: 180px;
+}
+
 .process-list el-table {
   margin-bottom: 10px;
 }
