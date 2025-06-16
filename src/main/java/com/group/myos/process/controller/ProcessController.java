@@ -1,12 +1,15 @@
 package com.group.myos.process.controller;
 
+import com.group.myos.process.ProcessScheduler;
 import com.group.myos.process.ProcessSwapper;
 import com.group.myos.process.model.Process;
-import com.group.myos.process.ProcessScheduler;
 import com.group.myos.device.manager.DeviceManager;
 import com.group.myos.device.model.Device;
 import com.group.myos.interrupt.model.InterruptType;
 import com.group.myos.interrupt.manager.InterruptManager;
+import com.group.myos.timer.TimerManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -25,17 +28,21 @@ public class ProcessController {
     private final ProcessSwapper processSwapper;
     private final DeviceManager deviceManager;
     private final InterruptManager interruptManager;
+    private final TimerManager timerManager;
+    private static final Logger logger = LoggerFactory.getLogger(ProcessController.class);
     
     @Autowired
     public ProcessController(
             ProcessScheduler processScheduler, 
             ProcessSwapper processSwapper,
             DeviceManager deviceManager,
-            InterruptManager interruptManager) {
+            InterruptManager interruptManager,
+            TimerManager timerManager) {
         this.processScheduler = processScheduler;
         this.processSwapper = processSwapper;
         this.deviceManager = deviceManager;
         this.interruptManager = interruptManager;
+        this.timerManager = timerManager;
     }
 
     // 进程管理API
@@ -570,13 +577,15 @@ public class ProcessController {
     /**
      * 请求设备
      * @param id 进程ID
-     * @param deviceType 设备类型
+     * @param deviceId 设备ID
+     * @param timeout 超时时间（秒），可选，默认30秒
      * @return 设备分配结果
      */
     @PostMapping("{id}/request-device")
     public ResponseEntity<Map<String, Object>> requestDevice(
             @PathVariable Long id,
-            @RequestParam String deviceType) {
+            @RequestParam Long deviceId,
+            @RequestParam(required = false, defaultValue = "30") Integer timeout) {
         Process process = processScheduler.getProcessById(id);
         if (process == null) {
             return ResponseEntity.badRequest().body(Map.of(
@@ -593,27 +602,41 @@ public class ProcessController {
             ));
         }
 
+        // 验证超时时间
+        if (timeout <= 0) {
+            return ResponseEntity.badRequest().body(Map.of(
+                "success", false,
+                "message", "超时时间必须大于0"
+            ));
+        }
+
+        // 启动系统时钟（如果还没有启动）
+        timerManager.start();
+        logger.info("系统时钟已启动，用于设备超时检查");
+
         // 调用设备管理器分配设备
-        Device device = deviceManager.allocateDeviceByType(deviceType, id);
-        if (device != null) {
+        boolean allocated = deviceManager.allocateDevice(deviceId, id, timeout);
+        Device device = deviceManager.getDevice(deviceId);
+        if (allocated && device != null) {
             // 设备分配成功
             return ResponseEntity.ok(Map.of(
                 "success", true,
                 "message", "设备分配成功",
                 "data", Map.of(
                     "process", process,
-                    "device", device
+                    "device", device,
+                    "timeout", timeout
                 )
             ));
         } else {
             // 设备分配失败，进程进入等待状态
-            processScheduler.blockProcess(id, "等待设备: " + deviceType);
+            processScheduler.blockProcess(id, "等待设备: " + deviceId);
             return ResponseEntity.ok(Map.of(
                 "success", true,
                 "message", "设备分配失败，进程进入等待状态",
                 "data", Map.of(
                     "process", process,
-                    "deviceType", deviceType
+                    "deviceId", deviceId
                 )
             ));
         }
@@ -622,13 +645,13 @@ public class ProcessController {
     /**
      * 释放设备
      * @param id 进程ID
-     * @param deviceType 设备类型
+     * @param deviceId 设备ID
      * @return 设备释放结果
      */
     @PostMapping("{id}/release-device")
     public ResponseEntity<Map<String, Object>> releaseDevice(
             @PathVariable Long id,
-            @RequestParam String deviceType) {
+            @RequestParam Long deviceId) {
         Process process = processScheduler.getProcessById(id);
         if (process == null) {
             return ResponseEntity.badRequest().body(Map.of(
@@ -638,12 +661,12 @@ public class ProcessController {
         }
 
         // 调用设备管理器释放设备
-        boolean released = deviceManager.releaseDeviceByType(deviceType, id);
-        if (released) {
-            // 如果进程正在等待该类型的设备，则唤醒进程
+        Device device = deviceManager.releaseDevice(deviceId);
+        if (device != null) {
+            // 如果进程正在等待该设备，则唤醒进程
             if (process.getState() == Process.ProcessState.WAITING && 
                 process.getWaitingReason() != null && 
-                process.getWaitingReason().startsWith("等待设备: " + deviceType)) {
+                process.getWaitingReason().startsWith("等待设备: " + deviceId)) {
                 processScheduler.wakeupProcess(id);
             }
             
@@ -652,13 +675,13 @@ public class ProcessController {
                 "message", "设备释放成功",
                 "data", Map.of(
                     "process", process,
-                    "deviceType", deviceType
+                    "device", device
                 )
             ));
         } else {
             return ResponseEntity.badRequest().body(Map.of(
                 "success", false,
-                "message", "设备释放失败，可能进程未持有该类型的设备"
+                "message", "设备释放失败，可能进程未持有该设备"
             ));
         }
     }

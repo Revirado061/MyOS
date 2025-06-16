@@ -355,6 +355,12 @@ public class InterruptManager {
 
     @EventListener
     public void handleDeviceTimeoutEvent(DeviceTimeoutEvent event) {
+        // 检查deviceId是否为空
+        if (event.getDeviceId() == null) {
+            // log.debug("收到设备超时检查事件，无需处理");
+            return;
+        }
+        
         // 触发设备中断
         triggerInterrupt(
             event.getDeviceId().intValue(),

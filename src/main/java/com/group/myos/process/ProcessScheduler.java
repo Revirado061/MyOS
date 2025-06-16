@@ -400,6 +400,13 @@ public class ProcessScheduler {
         // 添加到终止队列
         terminatedProcesses.add(process);
         
+        // 释放进程占用的内存
+        if (process.isInMemory()) {
+            memoryManager.freeMemoryForProcess(process);
+            process.setInMemory(false);
+            logger.info("释放进程 {} 占用的内存: {} MB", process.getId(), process.getMemorySize());
+        }
+        
         // 保存到数据库
         processRepository.save(process);
         
