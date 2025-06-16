@@ -9,6 +9,7 @@ import com.group.myos.interrupt.event.ProcessSchedulingEvent;
 import com.group.myos.interrupt.event.ProcessTerminationEvent;
 import com.group.myos.interrupt.event.ProcessWaitingEvent;
 import com.group.myos.interrupt.event.ProcessReadyEvent;
+import com.group.myos.interrupt.event.InterruptLogUpdatedEvent;
 import com.group.myos.device.manager.DeviceManager;
 import com.group.myos.device.event.DeviceTimeoutEvent;
 import com.group.myos.process.model.Process;
@@ -39,7 +40,7 @@ public class InterruptManager {
     private final List<InterruptLog> interruptLogs = new CopyOnWriteArrayList<>();
     private final AtomicLong interruptIdGenerator = new AtomicLong(0);
     private final AtomicLong logIdGenerator = new AtomicLong(0);
-    private static final long PROCESSING_DELAY = 5000; // 中断处理延迟5秒
+    private static final long PROCESSING_DELAY = 50; // 中断处理延迟改为50ms
     private static final int TIME_SLICE = 1; // 时间片长度（秒）
     private static final int CLOCK_INTERRUPT_HANDLING_TIME = 50; // 时钟中断处理时间（毫秒）
 
@@ -86,9 +87,9 @@ public class InterruptManager {
 
     /**
      * 处理中断
-     * 定时任务，每100ms执行一次
+     * 定时任务，每50ms执行一次
      */
-    @Scheduled(fixedRate = 100)
+    @Scheduled(fixedRate = 50)
     public void handleInterrupts() {
         Interrupt interrupt = interruptQueue.peek(); // 只查看不移除
         if (interrupt != null) {
@@ -121,7 +122,7 @@ public class InterruptManager {
         try {
             // 非时钟中断时增加处理延迟
             if (interrupt.getType() != InterruptType.CLOCK) {
-                Thread.sleep(100); // 其他中断处理延迟100ms
+                Thread.sleep(50); // 其他中断处理延迟改为50ms
             }
             
             switch (interrupt.getType()) {
@@ -241,6 +242,7 @@ public class InterruptManager {
         String reason = (String) interrupt.getData().get("reason");
         if (processId != null) {
             if ("PROCESS".equals(reason)) {
+                log.info("处理进程中断 - 类型: PROCESS, 进程ID: {}, 原因: 高优先级进程抢占", processId);
                 // 高优先级进程到达，将当前进程设置为就绪状态
                 eventPublisher.publishEvent(new ProcessReadyEvent(this, processId));
                 log.info("发布进程就绪事件 - 进程ID: {}, 原因: 高优先级进程到达", processId);
@@ -260,7 +262,8 @@ public class InterruptManager {
      * 处理时钟中断
      */
     private void handleClockInterrupt(Interrupt interrupt) {
-        log.info("处理时钟中断，时间片长度: {}秒", TIME_SLICE);
+        // 只在调试级别记录时钟中断
+        log.debug("处理时钟中断，时间片长度: {}秒", TIME_SLICE);
         try {
             // 模拟时钟中断处理时间
             Thread.sleep(CLOCK_INTERRUPT_HANDLING_TIME);
@@ -268,8 +271,8 @@ public class InterruptManager {
             // 发布进程调度事件
             eventPublisher.publishEvent(new ProcessSchedulingEvent(this));
             
-            // 记录中断处理完成
-            log.info("时钟中断处理完成，耗时: {}毫秒", CLOCK_INTERRUPT_HANDLING_TIME);
+            // 只在调试级别记录处理完成
+            log.debug("时钟中断处理完成，耗时: {}毫秒", CLOCK_INTERRUPT_HANDLING_TIME);
         } catch (InterruptedException e) {
             log.error("时钟中断处理被中断", e);
         }
@@ -294,7 +297,8 @@ public class InterruptManager {
      */
     public List<InterruptLog> getInterruptLogs(int limit, InterruptType type) {
         return interruptLogs.stream()
-            .filter(log -> type == null || log.getType() == type)
+            .filter(log -> (type == null || log.getType() == type) && log.getType() != InterruptType.CLOCK)  // 过滤掉时钟中断
+            .sorted(Comparator.comparing(InterruptLog::getTimestamp).reversed())  // 按时间戳倒序排序
             .limit(limit)
             .collect(Collectors.toList());
     }
@@ -318,14 +322,17 @@ public class InterruptManager {
             interrupt.getType(),
             interrupt.getTimestamp(),
             interrupt.getMessage(),
-            "待处理"
+            "已触发"  // 修改初始状态为"已触发"
         );
         interruptLogs.add(log);
         
-        // 保持日志数量不超过100条
-        if (interruptLogs.size() > 100) {
+        // 保持日志数量不超过1000条
+        if (interruptLogs.size() > 1000) {
             interruptLogs.remove(0);
         }
+        
+        // 发布日志更新事件
+        eventPublisher.publishEvent(new InterruptLogUpdatedEvent(this, log));
     }
 
     /**
@@ -337,7 +344,11 @@ public class InterruptManager {
         interruptLogs.stream()
             .filter(log -> log.getInterruptId().equals(interruptId))
             .findFirst()
-            .ifPresent(log -> log.setResult(result));
+            .ifPresent(log -> {
+                log.setResult(result);
+                // 发布日志更新事件
+                eventPublisher.publishEvent(new InterruptLogUpdatedEvent(this, log));
+            });
     }
 
     /**
@@ -375,16 +386,17 @@ public class InterruptManager {
     public void handleDeviceTimeoutEvent(DeviceTimeoutEvent event) {
         // 检查deviceId是否为空
         if (event.getDeviceId() == null) {
-            // log.debug("收到设备超时检查事件，无需处理");
             return;
         }
         
-        // 触发设备中断
+        // 立即触发设备中断，不等待
         triggerInterrupt(
             event.getDeviceId().intValue(),
             InterruptType.DEVICE,
             event.getDeviceId(),
-            event.getMessage()
+            String.format("设备 %d 使用时间到，已自动释放", event.getDeviceId())
         );
+        
+        log.info("设备超时事件处理完成 - 设备ID: {}", event.getDeviceId());
     }
 }

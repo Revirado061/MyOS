@@ -1067,13 +1067,13 @@ public class ProcessScheduler {
     @Scheduled(fixedRate = 50) // 每0.05秒执行一次
     public void checkAndSchedule() {
         // 如果当前没有运行进程且就绪队列不为空，或者当前有运行进程但就绪队列中有更高优先级的进程，则进行调度
-        if ((currentProcess == null && !readyQueue.isEmpty()) || 
-            (currentProcess != null && !readyQueue.isEmpty() && readyQueue.peek().getPriority() > currentProcess.getPriority())) {
-            logger.info("定时检查：当前运行进程: {}, 优先级: {}, 就绪队列头进程: {}, 优先级: {}", 
-                currentProcess != null ? currentProcess.getId() : "无",
-                currentProcess != null ? currentProcess.getPriority() : "无",
-                !readyQueue.isEmpty() ? readyQueue.peek().getId() : "无",
-                !readyQueue.isEmpty() ? readyQueue.peek().getPriority() : "无");
+        if ((currentProcess == null && !readyQueue.isEmpty()) ||
+                (currentProcess != null && !readyQueue.isEmpty() && readyQueue.peek().getPriority() > currentProcess.getPriority())) {
+            logger.info("定时检查：当前运行进程: {}, 优先级: {}, 就绪队列头进程: {}, 优先级: {}",
+                    currentProcess != null ? currentProcess.getId() : "无",
+                    currentProcess != null ? currentProcess.getPriority() : "无",
+                    !readyQueue.isEmpty() ? readyQueue.peek().getId() : "无",
+                    !readyQueue.isEmpty() ? readyQueue.peek().getPriority() : "无");
             schedule();
         }
     }
