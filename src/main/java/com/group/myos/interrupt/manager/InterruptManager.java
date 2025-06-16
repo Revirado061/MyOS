@@ -11,6 +11,8 @@ import com.group.myos.interrupt.event.ProcessWaitingEvent;
 import com.group.myos.interrupt.event.ProcessReadyEvent;
 import com.group.myos.device.manager.DeviceManager;
 import com.group.myos.device.event.DeviceTimeoutEvent;
+import com.group.myos.process.model.Process;
+import com.group.myos.process.repository.ProcessRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
@@ -46,6 +48,9 @@ public class InterruptManager {
 
     @Autowired
     private DeviceManager deviceManager; // 添加设备管理器依赖
+
+    @Autowired
+    private ProcessRepository processRepository;
 
     /**
      * 触发中断
@@ -205,6 +210,19 @@ public class InterruptManager {
     private void handleIOInterrupt(Interrupt interrupt) {
         Long processId = (Long) interrupt.getData().get("processId");
         if (processId != null) {
+            // 获取进程
+            Process process = processRepository.findById(processId).orElse(null);
+            if (process == null) {
+                log.warn("I/O中断处理失败 - 进程不存在: {}", processId);
+                return;
+            }
+            
+            // 检查进程是否在运行状态
+            if (process.getState() != Process.ProcessState.RUNNING) {
+                log.warn("I/O中断处理失败 - 进程不在运行状态: {}, 当前状态: {}", processId, process.getState());
+                return;
+            }
+            
             // 发布进程等待事件
             eventPublisher.publishEvent(new ProcessWaitingEvent(this, processId, "等待I/O"));
             log.info("发布I/O等待事件 - 进程ID: {}, 原因: 等待I/O", processId);
@@ -222,7 +240,7 @@ public class InterruptManager {
         Long processId = (Long) interrupt.getData().get("processId");
         String reason = (String) interrupt.getData().get("reason");
         if (processId != null) {
-            if ("HIGHER_PRIORITY_PROCESS".equals(reason)) {
+            if ("PROCESS".equals(reason)) {
                 // 高优先级进程到达，将当前进程设置为就绪状态
                 eventPublisher.publishEvent(new ProcessReadyEvent(this, processId));
                 log.info("发布进程就绪事件 - 进程ID: {}, 原因: 高优先级进程到达", processId);

@@ -105,8 +105,13 @@ public class ProcessScheduler {
      * 当进程进入就绪队列时自动调用
      */
     private void autoSchedule() {
-        // 如果当前没有运行中的进程，立即调度
-        if (currentProcess == null) {
+        // 如果当前没有运行进程，或者就绪队列中存在优先级比正在运行的进程高的进程，则进行调度
+        if (currentProcess == null || (!readyQueue.isEmpty() && readyQueue.peek().getPriority() > currentProcess.getPriority())) {
+            logger.info("触发自动调度 - 当前运行进程: {}, 优先级: {}, 就绪队列头进程: {}, 优先级: {}", 
+                currentProcess != null ? currentProcess.getId() : "无",
+                currentProcess != null ? currentProcess.getPriority() : "无",
+                !readyQueue.isEmpty() ? readyQueue.peek().getId() : "无",
+                !readyQueue.isEmpty() ? readyQueue.peek().getPriority() : "无");
             schedule();
         }
     }
@@ -379,6 +384,12 @@ public class ProcessScheduler {
     public void terminateProcess(Process process) {
         if (process == null) return;
         
+        // 检查进程是否处于运行状态
+        if (process.getState() != Process.ProcessState.RUNNING) {
+            logger.warn("尝试终止非运行状态的进程: {}", process.getId());
+            return;
+        }
+        
         // 记录终止前的状态
         Process.ProcessState oldState = process.getState();
         
@@ -414,6 +425,11 @@ public class ProcessScheduler {
         recordTransition(process, oldState, Process.ProcessState.TERMINATED, "进程终止");
         
         logger.info("进程 {} 已终止", process.getId());
+        
+        // 打印队列状态
+        logger.info("就绪队列中的进程: {}", readyQueue.stream().map(Process::getId).collect(Collectors.toList()));
+        logger.info("等待队列中的进程: {}", waitingProcesses.stream().map(Process::getId).collect(Collectors.toList()));
+        logger.info("终止队列中的进程: {}", terminatedProcesses.stream().map(Process::getId).collect(Collectors.toList()));
         
         // 自动调度下一个进程
         autoSchedule();
@@ -767,7 +783,7 @@ public class ProcessScheduler {
                     processRepository.save(process);
                     recordTransition(process, oldState, Process.ProcessState.READY, "其他中断");
                     // 检查是否需要抢占当前进程
-                    if (!readyQueue.isEmpty() && readyQueue.peek().getPriority() > process.getPriority()) {
+                    if (currentProcess == null || (!readyQueue.isEmpty() && readyQueue.peek().getPriority() > process.getPriority())) {
                         logger.info("高优先级进程 {} 进入就绪队列，触发抢占", readyQueue.peek().getId());
                         autoSchedule();
                     }
@@ -786,20 +802,28 @@ public class ProcessScheduler {
         }
         switch (reason) {
             case "PROCESS":
-                if (process.equals(currentProcess)) {
+                if (currentProcess != null && process.getId().equals(currentProcess.getId())) {
                     Process.ProcessState oldState = process.getState();
                     process.setState(Process.ProcessState.READY);
                     process.setLastUpdateTime(LocalDateTime.now());
+                    
+                    // 在添加到就绪队列之前判断是否需要调度
+                    boolean needSchedule = currentProcess == null || process.getPriority() > currentProcess.getPriority();
+                    
                     readyQueue.offer(process);
                     currentProcess = null;
                     processRepository.save(process);
                     recordTransition(process, oldState, Process.ProcessState.READY, "进程中断");
-                    autoSchedule();
+                    
+                    if (needSchedule) {
+                        logger.info("进程 {} 中断后进入就绪队列，触发调度", processId);
+                        autoSchedule();
+                    }
                 }
                 break;
             case "IO":
             case "DEVICE":
-                if (process.equals(currentProcess)) {
+                if (currentProcess != null && process.getId().equals(currentProcess.getId())) {
                     Process.ProcessState oldState = process.getState();
                     process.setState(Process.ProcessState.WAITING);
                     process.setLastUpdateTime(LocalDateTime.now());
@@ -811,23 +835,44 @@ public class ProcessScheduler {
                 }
                 break;
             case "ERROR":
-                if (process.equals(currentProcess)) {
+                if (currentProcess != null && process.getId().equals(currentProcess.getId())) {
                     terminateProcess(process);
                 }
                 break;
             case "CLOCK":
-                // 时钟中断一般不直接改变进程状态
+                // 时钟中断时，检查是否需要调度
+                if (currentProcess != null) {
+                    // 如果就绪队列中有更高优先级的进程，则进行调度
+                    if (!readyQueue.isEmpty() && readyQueue.peek().getPriority() > currentProcess.getPriority()) {
+                        logger.info("时钟中断：检测到高优先级进程 {} (优先级: {})，抢占当前进程 {} (优先级: {})", 
+                            readyQueue.peek().getId(), readyQueue.peek().getPriority(),
+                            currentProcess.getId(), currentProcess.getPriority());
+                        autoSchedule();
+                    }
+                } else if (!readyQueue.isEmpty()) {
+                    // 如果当前没有运行进程，且就绪队列不为空，则进行调度
+                    logger.info("时钟中断：当前无运行进程，就绪队列不为空，开始调度");
+                    autoSchedule();
+                }
                 break;
             case "OTHER":
-                if (process.equals(currentProcess)) {
+                if (currentProcess != null && process.getId().equals(currentProcess.getId())) {
                     Process.ProcessState oldState = process.getState();
                     process.setState(Process.ProcessState.READY);
                     process.setLastUpdateTime(LocalDateTime.now());
+                    
+                    // 在添加到就绪队列之前判断是否需要调度
+                    boolean needSchedule = currentProcess == null || process.getPriority() > currentProcess.getPriority();
+                    
                     readyQueue.offer(process);
                     currentProcess = null;
                     processRepository.save(process);
                     recordTransition(process, oldState, Process.ProcessState.READY, "其他中断");
-                    autoSchedule();
+                    
+                    if (needSchedule) {
+                        logger.info("进程 {} 中断后进入就绪队列，触发调度", processId);
+                        autoSchedule();
+                    }
                 }
                 break;
         }
@@ -892,7 +937,7 @@ public class ProcessScheduler {
         Process process = getProcessById(processId);
         if (process != null) {
             // 如果进程是当前运行进程，需要将其从运行状态移除
-            if (process.equals(currentProcess)) {
+            if (currentProcess != null && process.getId().equals(currentProcess.getId())) {
                 currentProcess = null;
             }
             // 如果进程在就绪队列中，需要移除
@@ -916,6 +961,11 @@ public class ProcessScheduler {
             
             logger.info("进程 {} 已终止", processId);
             
+            // 打印队列状态
+            logger.info("就绪队列中的进程: {}", readyQueue.stream().map(Process::getId).collect(Collectors.toList()));
+            logger.info("等待队列中的进程: {}", waitingProcesses.stream().map(Process::getId).collect(Collectors.toList()));
+            logger.info("终止队列中的进程: {}", terminatedProcesses.stream().map(Process::getId).collect(Collectors.toList()));
+            
             // 自动调度下一个进程
             autoSchedule();
         }
@@ -929,7 +979,7 @@ public class ProcessScheduler {
             logger.info("处理进程等待事件 - 进程ID: {}, 当前状态: {}", processId, process.getState());
             
             // 如果进程是当前运行进程，需要将其从运行状态移除
-            if (process.equals(currentProcess)) {
+            if (currentProcess != null && process.getId().equals(currentProcess.getId())) {
                 currentProcess = null;
                 logger.info("进程 {} 从运行状态移除", processId);
             }
@@ -971,7 +1021,7 @@ public class ProcessScheduler {
             waitingProcesses.remove(process);
             
             // 如果进程是当前运行进程，需要先将其从运行状态移除
-            if (process.equals(currentProcess)) {
+            if (currentProcess != null && process.getId().equals(currentProcess.getId())) {
                 currentProcess = null;
             }
             
@@ -979,16 +1029,22 @@ public class ProcessScheduler {
             Process.ProcessState oldState = process.getState();
             process.setState(Process.ProcessState.READY);
             process.setLastUpdateTime(LocalDateTime.now());
+            
+            // 在添加到就绪队列之前判断是否需要调度
+            boolean needSchedule = currentProcess == null || process.getPriority() > currentProcess.getPriority();
+            
             readyQueue.offer(process);
             processRepository.save(process);
             
             // 记录状态转换
             recordTransition(process, oldState, Process.ProcessState.READY, "进程就绪");
             
-            // 检查是否需要立即调度
-            if (currentProcess == null || process.getPriority() > currentProcess.getPriority()) {
-                // 如果当前没有运行进程，或者新就绪进程优先级更高，立即调度
-                schedule();
+            if (needSchedule) {
+                logger.info("进程 {} 进入就绪队列，优先级: {}，当前运行进程: {}，优先级: {}", 
+                    processId, process.getPriority(),
+                    currentProcess != null ? currentProcess.getId() : "无",
+                    currentProcess != null ? currentProcess.getPriority() : "无");
+                autoSchedule();
             }
         }
     }
@@ -1010,9 +1066,14 @@ public class ProcessScheduler {
 
     @Scheduled(fixedRate = 50) // 每0.05秒执行一次
     public void checkAndSchedule() {
-        // 如果当前没有运行进程，且就绪队列不为空，则进行调度
-        if (currentProcess == null && !readyQueue.isEmpty()) {
-            logger.info("定时检查：当前无运行进程，就绪队列不为空，开始调度");
+        // 如果当前没有运行进程且就绪队列不为空，或者当前有运行进程但就绪队列中有更高优先级的进程，则进行调度
+        if ((currentProcess == null && !readyQueue.isEmpty()) || 
+            (currentProcess != null && !readyQueue.isEmpty() && readyQueue.peek().getPriority() > currentProcess.getPriority())) {
+            logger.info("定时检查：当前运行进程: {}, 优先级: {}, 就绪队列头进程: {}, 优先级: {}", 
+                currentProcess != null ? currentProcess.getId() : "无",
+                currentProcess != null ? currentProcess.getPriority() : "无",
+                !readyQueue.isEmpty() ? readyQueue.peek().getId() : "无",
+                !readyQueue.isEmpty() ? readyQueue.peek().getPriority() : "无");
             schedule();
         }
     }
