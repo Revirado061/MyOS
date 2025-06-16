@@ -283,6 +283,14 @@ public class ProcessController {
             return ResponseEntity.badRequest().body(response);
         }
         
+        // 检查进程是否处于运行状态
+        if (process.getState() != Process.ProcessState.RUNNING) {
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "只能终止运行状态的进程");
+            return ResponseEntity.badRequest().body(response);
+        }
+        
         // 直接调用进程调度器终止进程
         processScheduler.terminateProcess(process);
         
