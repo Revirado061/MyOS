@@ -578,12 +578,14 @@ public class ProcessController {
      * 请求设备
      * @param id 进程ID
      * @param deviceId 设备ID
+     * @param timeout 超时时间（秒），可选，默认30秒
      * @return 设备分配结果
      */
     @PostMapping("{id}/request-device")
     public ResponseEntity<Map<String, Object>> requestDevice(
             @PathVariable Long id,
-            @RequestParam Long deviceId) {
+            @RequestParam Long deviceId,
+            @RequestParam(required = false, defaultValue = "30") Integer timeout) {
         Process process = processScheduler.getProcessById(id);
         if (process == null) {
             return ResponseEntity.badRequest().body(Map.of(
@@ -600,12 +602,20 @@ public class ProcessController {
             ));
         }
 
+        // 验证超时时间
+        if (timeout <= 0) {
+            return ResponseEntity.badRequest().body(Map.of(
+                "success", false,
+                "message", "超时时间必须大于0"
+            ));
+        }
+
         // 启动系统时钟（如果还没有启动）
         timerManager.start();
         logger.info("系统时钟已启动，用于设备超时检查");
 
         // 调用设备管理器分配设备
-        boolean allocated = deviceManager.allocateDevice(deviceId, id, 30); // 默认超时时间30秒
+        boolean allocated = deviceManager.allocateDevice(deviceId, id, timeout);
         Device device = deviceManager.getDevice(deviceId);
         if (allocated && device != null) {
             // 设备分配成功
@@ -614,7 +624,8 @@ public class ProcessController {
                 "message", "设备分配成功",
                 "data", Map.of(
                     "process", process,
-                    "device", device
+                    "device", device,
+                    "timeout", timeout
                 )
             ));
         } else {
