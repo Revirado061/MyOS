@@ -20,7 +20,6 @@
       <div style="margin-bottom: 12px; display: flex; gap: 12px;">
         <el-button type="success" size="small" @click="showCreateDir = !showCreateDir">创建目录</el-button>
         <el-button type="primary" size="small" @click="showCreateFile = !showCreateFile">创建文件</el-button>
-        <el-button type="warning" size="small" @click="showWriteContentDialog = true">写入文件内容</el-button>
       </div>
       <!-- 第四行：创建目录输入框 -->
       <div v-if="showCreateDir" style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
@@ -36,21 +35,6 @@
         <el-button type="primary" size="small" @click="handleCreateFile">提交</el-button>
         <el-button size="small" @click="showCreateFile = false">取消</el-button>
       </div>
-      <!-- 写入文件内容对话框 -->
-      <el-dialog title="写入文件内容" :visible.sync="showWriteContentDialog" width="800px" @close="resetWriteContentDialog">
-        <el-form label-width="80px">
-          <el-form-item label="文件名称">
-            <el-input v-model="writeFileName"></el-input>
-          </el-form-item>
-          <el-form-item label="文件内容">
-            <el-input type="textarea" v-model="writeFileContent" :rows="6"></el-input>
-          </el-form-item>
-        </el-form>
-        <div slot="footer" class="dialog-footer">
-          <el-button @click="showWriteContentDialog = false">取消</el-button>
-          <el-button type="primary" @click="handleWriteContent">写入</el-button>
-        </div>
-      </el-dialog>
       <!-- 文件树结构保持不变 -->
       <div class="file-tree">
         <h3>文件系统结构</h3>
@@ -84,6 +68,13 @@
         <div>总空间: {{ totalSpace }}MB</div>
         <div>已用空间: {{ usedSpace }}MB</div>
         <div>空闲空间: {{ freeSpace }}MB</div>
+        <div>利用率: {{ diskUsagePercentage }}%</div>
+        <el-progress 
+          :percentage="diskUsagePercentage" 
+          :status="diskUsageStatus"
+          :format="diskUsageFormat"
+          style="margin-top: 2px;width: 500px;height: 30px;"
+        ></el-progress>
       </div>
       
       <div class="disk-blocks-grid">
@@ -112,7 +103,7 @@
               :disabled="!currentFile"
               @click="isEditing = !isEditing"
             >
-              {{ isEditing ? '保存' : '修改' }}
+              {{ isEditing ? '保存' : '写入文件内容' }}
             </el-button>
             <el-button 
               type="info" 
@@ -154,7 +145,8 @@ import {
   closeFile,
   readFileContent,
   writeFileContent,
-  changeDirectory
+  changeDirectory,
+  getDiskStatus
 } from '@/api/file'
 
 export default {
@@ -186,10 +178,11 @@ export default {
       createDirName: '',
       showCreateFile: false,
       createFileName: '',
-      showWriteContentDialog: false,
       writeFileName: '',
       writeFileContent: '',
-      changeDirInput: ''
+      changeDirInput: '',
+      usagePercentage: 0,
+      usedBlocks: 0,
     }
   },
   created() {
@@ -209,8 +202,31 @@ export default {
           size: this.blockSize
         }))
       )
+      this.fetchDiskData()
     },
-
+    async fetchDiskData(){
+      const response = await getDiskStatus()
+      this.usagePercentage = response.status.usagePercentage
+      this.usedSpace = response.status.usedBlocks * 32
+      this.freeSpace = response.status.freeBlocks * 32
+      this.usedBlocks = response.status.usedBlocks
+      
+      // 计算总行数
+      const totalBlocks = Math.ceil(this.totalSpace / this.blockSize)
+      const rows = Math.ceil(totalBlocks / this.blocksPerRow)
+      
+      // 创建新的磁盘块数组
+      this.diskRows = Array(rows).fill().map((_, rowIndex) => 
+        Array(this.blocksPerRow).fill().map((_, blockIndex) => {
+          const blockNumber = rowIndex * this.blocksPerRow + blockIndex
+          return {
+            status: blockNumber < this.usedBlocks ? 'ALLOCATED' : 'FREE',
+            fileId: blockNumber < this.usedBlocks ? `file_${blockNumber}` : null,
+            size: this.blockSize
+          }
+        })
+      )
+    },
     getBlockTooltip(block) {
       if (block.status === 'ALLOCATED') {
         return `文件: ${block.fileId}\n大小: ${block.size}MB`
@@ -291,13 +307,19 @@ export default {
 
     async deleteNode(node, data) {
       try {
+        let response;
         if (data.type === 'directory') {
-          await deleteDirectory(data.name)
+          response = await deleteDirectory(data.name)
         } else {
-          await deleteFile(data.name)
+          response = await deleteFile(data.name)
         }
-        this.$message.success(`${data.type === 'directory' ? '目录' : '文件'}删除成功`)
-        this.fetchFileTree()
+        if (response.success) {
+          this.$message.success(`${data.type === 'directory' ? '目录' : '文件'}删除成功`)
+          this.fetchFileTree()
+          this.fetchDiskData()
+        } else {
+          this.$message.error(response.message || `${data.type === 'directory' ? '目录' : '文件'}删除失败`)
+        }
       } catch (error) {
         this.$message.error(`${data.type === 'directory' ? '目录' : '文件'}删除失败`)
       }
@@ -335,9 +357,14 @@ export default {
         console.log('切换目录请求参数类型:', typeof this.changeDirInput)
         const response = await changeDirectory(String(this.changeDirInput).trim())
         console.log('切换目录响应:', response)
-        this.fetchFileTree()
-        this.fetchCurrentPath()
-        this.changeDirInput = ''
+        if (response.success) {
+          this.$message.success('切换目录成功')
+          this.fetchFileTree()
+          this.fetchCurrentPath()
+          this.changeDirInput = ''
+        } else {
+          this.$message.error(response.message || '切换目录失败')
+        }
       } catch (error) {
         console.error('切换目录错误:', error)
         this.$message.error('切换目录失败')
@@ -346,10 +373,16 @@ export default {
 
     async handleCreateDirectory() {
       try {
-        await createDirectory(this.createDirName)
-        this.showCreateDir = false
-        this.fetchFileTree()
-        this.fetchCurrentPath()
+        const response = await createDirectory(this.createDirName)
+        if (response.success) {
+          this.$message.success('创建目录成功')
+          this.showCreateDir = false
+          this.createDirName = ''
+          this.fetchFileTree()
+          this.fetchCurrentPath()
+        } else {
+          this.$message.error(response.message || '创建目录失败')
+        }
       } catch (error) {
         this.$message.error('创建目录失败')
       }
@@ -361,11 +394,16 @@ export default {
         return
       }
       try {
-        await createFile(this.createFileName)
-        this.$message.success('文件创建成功')
-        this.showCreateFile = false
-        this.createFileName = ''
-        this.fetchFileTree()
+        const response = await createFile(this.createFileName)
+        if (response.success) {
+          this.$message.success('文件创建成功')
+          this.showCreateFile = false
+          this.createFileName = ''
+          this.fetchFileTree()
+          this.fetchDiskData()
+        } else {
+          this.$message.error(response.message || '创建文件失败')
+        }
       } catch (error) {
         console.error('创建文件错误:', error)
         this.$message.error('创建文件失败')
@@ -378,10 +416,14 @@ export default {
         return
       }
       try {
-        await writeFileContent(this.writeFileName, this.writeFileContent)
-        this.$message.success('文件内容写入成功')
-        this.showWriteContentDialog = false
-        this.fetchFileTree()
+        const response = await writeFileContent(this.writeFileName, this.writeFileContent)
+        if (response.success) {
+          this.$message.success('文件内容写入成功')
+          this.fetchFileTree()
+          this.fetchDiskData()
+        } else {
+          this.$message.error(response.message || '写入文件内容失败')
+        }
       } catch (error) {
         console.error('写入文件内容错误:', error)
         this.$message.error('写入文件内容失败')
@@ -391,6 +433,20 @@ export default {
     resetWriteContentDialog() {
       this.writeFileName = ''
       this.writeFileContent = ''
+    }
+  },
+  computed: {
+    diskUsagePercentage() {
+      return this.usagePercentage 
+    },
+    diskUsageStatus() {
+      const percentage = this.diskUsagePercentage
+      if (percentage >= 90) return 'exception'
+      if (percentage >= 70) return 'warning'
+      return 'success'
+    },
+    diskUsageFormat() {
+      return (percentage) => `${percentage}%`
     }
   },
   watch: {
