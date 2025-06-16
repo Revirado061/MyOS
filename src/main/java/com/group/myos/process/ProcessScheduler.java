@@ -388,8 +388,9 @@ public class ProcessScheduler {
         terminatedProcesses.remove(process); // 确保不在终止队列中
         
         // 如果进程是当前运行进程，清除当前进程
-        if (process.equals(currentProcess)) {
+        if (currentProcess != null && process.getId().equals(currentProcess.getId())) {
             currentProcess = null;
+            logger.info("清除当前运行进程: {}", process.getId());
         }
         
         // 设置进程状态为终止
@@ -987,6 +988,12 @@ public class ProcessScheduler {
 
     @Scheduled(fixedRate = 5000) // 每5秒执行一次
     public void printQueueStatus() {
+        // 检查当前运行进程是否有效
+        if (currentProcess != null && currentProcess.getState() != Process.ProcessState.RUNNING) {
+            logger.info("发现无效的当前运行进程，正在清除: {}", currentProcess.getId());
+            currentProcess = null;
+        }
+        
         // 只打印队列状态，不进行调度
         logger.info("当前运行进程: {}", currentProcess != null ? currentProcess.getId() : "无");
         logger.info("就绪队列中的进程: {}", readyQueue.stream().map(Process::getId).collect(Collectors.toList()));
