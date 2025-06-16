@@ -1,38 +1,51 @@
 <template>
   <div class="system-clock">
-    <el-button type="primary" @click="toggleClock">
-      {{ isRunning ? '暂停' : '启动' }}
-    </el-button>
-    <span class="clock-display">{{ currentTime }}</span>
-  </div>
+    <span class="clock-display">{{ formatTime(currentTime) }} / {{currentTime }}</span>
+  </div></span>
 </template>
 
 <script>
-import { mapGetters, mapActions } from 'vuex'
+import { getCurrentTime } from '@/api/clock'
 
 export default {
   name: 'SystemClock',
-  computed: {
-    ...mapGetters([
-      'isClockRunning',
-      'currentTime'
-    ]),
-    isRunning() {
-      return this.isClockRunning
+  data() {
+    return {
+      currentTime: 0,
+      timer: null
     }
   },
   methods: {
-    ...mapActions([
-      'startClock',
-      'pauseClock'
-    ]),
-    toggleClock() {
-      if (this.isRunning) {
-        this.pauseClock()
-      } else {
-        this.startClock()
+    formatTime(seconds) {
+      const hours = Math.floor(seconds / 3600)
+      const minutes = Math.floor((seconds % 3600) / 60)
+      const secs = seconds % 60
+      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+    },
+    async updateTime() {
+      try {
+        const response = await getCurrentTime()
+        this.currentTime = response.currentTime
+      } catch (error) {
+        console.error('获取时间失败:', error)
+      }
+    },
+    startTimer() {
+      this.updateTime()
+      this.timer = setInterval(this.updateTime, 1000)
+    },
+    clearTimer() {
+      if (this.timer) {
+        clearInterval(this.timer)
+        this.timer = null
       }
     }
+  },
+  created() {
+    this.startTimer()
+  },
+  beforeDestroy() {
+    this.clearTimer()
   }
 }
 </script>
@@ -44,7 +57,6 @@ export default {
   right: 20px;
   display: flex;
   align-items: center;
-  gap: 10px;
   z-index: 1;
 }
 

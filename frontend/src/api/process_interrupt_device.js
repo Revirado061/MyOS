@@ -72,7 +72,7 @@ export const processApi = {
 export const interruptApi = {
     // 触发进程中断
     triggerInterrupt: (id, reason) => {
-        return request.post(`/process/${id}/interrupt`, { reason });
+        return request.post(`/process/${id}/interrupt?reason=${reason}`);
     }
 };
 
