@@ -129,11 +129,41 @@ public class FileSystem {
             for (int blockNumber : file.getBlockNumbers()) {
                 byte[] block = diskSpaceManager.readBlock(blockNumber);
                 if (block != null) {
-                    content.append(new String(block));
+                    content.append(new String(block).trim());
                 }
             }
         }
         return content.toString();
+    }
+
+    // 分块读取文件内容
+    public String readFileContentByChunk(String name, int startBlock, int numBlocks) {
+        File file = currentDirectory.getFiles().get(name);
+        if (file == null || !file.isOpen()) {
+            return null;
+        }
+
+        StringBuilder content = new StringBuilder();
+        if (file.getBlockNumbers() != null) {
+            int endBlock = Math.min(startBlock + numBlocks, file.getBlockNumbers().length);
+            for (int i = startBlock; i < endBlock; i++) {
+                int blockNumber = file.getBlockNumbers()[i];
+                byte[] block = diskSpaceManager.readBlock(blockNumber);
+                if (block != null) {
+                    content.append(new String(block).trim());
+                }
+            }
+        }
+        return content.toString();
+    }
+
+    // 获取文件块数
+    public int getFileBlockCount(String name) {
+        File file = currentDirectory.getFiles().get(name);
+        if (file == null) {
+            return 0;
+        }
+        return file.getBlockNumbers() != null ? file.getBlockNumbers().length : 0;
     }
 
     public boolean writeFileContent(String name, String content) {
