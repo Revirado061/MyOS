@@ -3,6 +3,7 @@ package com.group.myos.filesystem.controller;
 import com.group.myos.filesystem.FileSystem;
 import com.group.myos.filesystem.model.File;
 import jakarta.annotation.Resource;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -114,20 +115,41 @@ public class FileSystemController {
 
     // 读取文件内容
     @GetMapping("/file/content")
-    public ResponseEntity<?> readFileContent(@RequestParam String name) {
-        String content = fileSystem.readFileContent(name);
+    public ResponseEntity<?> readFileContent(
+            @RequestParam String name,
+            @RequestParam(required = false) Integer startBlock,
+            @RequestParam(required = false) Integer numBlocks) {
+        
         Map<String, Object> response = new HashMap<>();
-        if (content != null) {
-            response.put("success", true);
-            response.put("content", content);
+        
+        // 如果指定了分块参数，使用分块读取
+        if (startBlock != null && numBlocks != null) {
+            String content = fileSystem.readFileContentByChunk(name, startBlock, numBlocks);
+            if (content != null) {
+                response.put("success", true);
+                response.put("content", content);
+                response.put("startBlock", startBlock);
+                response.put("numBlocks", numBlocks);
+                response.put("totalBlocks", fileSystem.getFileBlockCount(name));
+            } else {
+                response.put("success", false);
+                response.put("message", "文件不存在或未打开");
+            }
         } else {
-            response.put("success", false);
-            response.put("message", "文件不存在或未打开");
+            // 使用原有的完整读取方式
+            String content = fileSystem.readFileContent(name);
+            if (content != null) {
+                response.put("success", true);
+                response.put("content", content);
+            } else {
+                response.put("success", false);
+                response.put("message", "文件不存在或未打开");
+            }
         }
         return ResponseEntity.ok(response);
     }
 
-    // 写入文件内容
+//     写入文件内容
     @PostMapping("/file/content")
     public ResponseEntity<?> writeFileContent(
             @RequestParam String name,
@@ -145,6 +167,26 @@ public class FileSystemController {
         response.put("message", result ? "文件写入成功" : "文件不存在或未打开");
         return ResponseEntity.ok(response);
     }
+//    @PostMapping(value = "/file/content", consumes = MediaType.TEXT_PLAIN_VALUE)
+//    public ResponseEntity<?> writeFileContent(
+//            @RequestParam String name,
+//            @RequestBody(required = false) String content) {
+//
+//        if (content == null || content.trim().isEmpty()) {
+//            Map<String, Object> response = new HashMap<>();
+//            response.put("success", false);
+//            response.put("message", "文件内容不能为空");
+//            return ResponseEntity.badRequest().body(response);
+//        }
+//
+//        boolean result = fileSystem.writeFileContent(name, content);
+//
+//        Map<String, Object> response = new HashMap<>();
+//        response.put("success", result);
+//        response.put("message", result ? "文件写入成功" : "文件不存在或未打开");
+//
+//        return ResponseEntity.ok(response);
+//    }
 
     // 获取完整目录树
     @GetMapping("/tree")
@@ -155,4 +197,14 @@ public class FileSystemController {
         response.put("tree", tree);
         return ResponseEntity.ok(response);
     }
-} 
+
+    // 获取磁盘使用状态
+    @GetMapping("/disk-status")
+    public ResponseEntity<?> getDiskStatus() {
+        Map<String, Object> status = fileSystem.getDiskStatus();
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("status", status);
+        return ResponseEntity.ok(response);
+    }
+}
