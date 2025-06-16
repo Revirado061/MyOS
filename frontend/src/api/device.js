@@ -26,11 +26,11 @@ export function getDeviceStatus(deviceId) {
 }
 
 // 请求设备
-export function requestDevice(processId, deviceType) {
+export function requestDevice(processId, deviceId, timeout) {
   return request({
     url: `/process/${processId}/request-device`,
     method: 'post',
-    data: { deviceType }
+    params: { deviceId, timeout }
   })
 }
 

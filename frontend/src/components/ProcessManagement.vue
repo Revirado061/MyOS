@@ -243,7 +243,7 @@
               <el-button
                 size="mini"
                 type="primary"
-                @click="handleRequestDevice(scope.row.type)"
+                @click="showAllocateDialog(scope.row)"
                 :disabled="scope.row.status !== 'IDLE'">
                 请求
               </el-button>
@@ -534,31 +534,35 @@ export default {
     // 弹出设备分配对话框
     showAllocateDialog(device) {
       this.selectedDevice = device
-      this.allocateForm.timeout = 5
+      this.allocateForm.timeout = 15
       this.allocateDialogVisible = true
     },
 
     // 确认分配设备
-    async handleRequestDevice(deviceType) {
+    async handleAllocate() {
       try {
+        if (!this.selectedDevice) {
+          this.$message.error('未选择设备')
+          return
+        }
+
         const response = await requestDevice(
           this.currentProcessId,
-          deviceType
+          this.selectedDevice.id,
+          this.allocateForm.timeout
         )
         
         if (response.success) {
-          this.$message.success(response.message || '设备请求成功')
-          // 刷新设备和进程数据
-          await Promise.all([
-            this.fetchDevices(),
-            this.fetchProcesses()
-          ])
+          this.$message.success('设备分配成功')
+          this.allocateDialogVisible = false
+          // 刷新设备列表
+          await this.fetchDevices()
         } else {
-          this.$message.error(response.message || '设备请求失败')
+          this.$message.error(response.message || '设备分配失败')
         }
       } catch (error) {
-        console.error('设备请求失败:', error)
-        this.$message.error('设备请求失败')
+        console.error('设备分配失败:', error)
+        this.$message.error('设备分配失败')
       }
     },
 
