@@ -140,8 +140,8 @@ public class DeviceManager {
                     
                     if (device.getRemainingTime() <= 0) {
                         log.info("设备 {} 使用时间到，自动释放", device.getId());
-                        // 自动释放设备，状态设置为 ERROR
-                        device.setStatus(DeviceStatus.ERROR);
+                        // 自动释放设备，状态设置为 IDLE
+                        device.setStatus(DeviceStatus.IDLE);
                         device.setCurrentProcessId(null);
                         device.setRemainingTime(0);
                         
