@@ -33,14 +33,17 @@
 
     <div class="interrupt-handling">
       <h3>中断处理</h3>
-      <div class="interrupt-list">
+      <div class="interrupt-list" v-loading="loading">
         <el-timeline>
           <el-timeline-item
-            v-for="(interrupt, index) in interrupts"
-            :key="index"
+            v-for="interrupt in interrupts"
+            :key="interrupt.id"
             :type="getInterruptType(interrupt.type)"
-            :timestamp="interrupt.time">
-            {{ interrupt.message }}
+            :timestamp="formatTimestamp(interrupt.timestamp)">
+            <div class="interrupt-content">
+              <div class="interrupt-message">{{ interrupt.message }}</div>
+              <div class="interrupt-result">{{ interrupt.result }}</div>
+            </div>
           </el-timeline-item>
         </el-timeline>
       </div>
@@ -50,6 +53,7 @@
 
 <script>
 import { getFreeMemoryBlocks, getFreeMemorySize, getMemoryStatus, getMemoryUsage } from '../api/memory'
+import { getInterruptLogs } from '@/api/interrupt'
 
 export default {
   name: 'MemoryManagement',
@@ -66,7 +70,9 @@ export default {
 
       // 中断部分
       updateInterval: null,
-      interrupts: [], // 添加中断数组
+      interrupts: [],
+      timer: null,
+      loading: false
     }
   },
   computed: {
@@ -85,10 +91,20 @@ export default {
     this.fetchMemoryData()
     // 每1秒更新一次内存数据
     this.updateInterval = setInterval(this.fetchMemoryData, 1000)
+    // 初始加载中断日志
+    this.fetchInterruptLogs()
+    // 设置定时刷新
+    this.timer = setInterval(() => {
+      this.fetchInterruptLogs()
+    }, 1000) // 每1秒刷新一次
   },
   beforeDestroy() {
     if (this.updateInterval) {
       clearInterval(this.updateInterval)
+    }
+    // 组件销毁前清除定时器
+    if (this.timer) {
+      clearInterval(this.timer)
     }
   },
   methods: {
@@ -185,13 +201,14 @@ export default {
       )
     },
     getInterruptType(type) {
-      const types = {
-        'MEMORY_ALLOCATION': 'success',
-        'MEMORY_DEALLOCATION': 'warning',
-        'MEMORY_ERROR': 'danger',
-        'default': 'info'
+      const typeMap = {
+        'CLOCK': 'primary',
+        'IO': 'success',
+        'DEVICE': 'warning',
+        'ERROR': 'danger',
+        'PROCESS': 'info'
       }
-      return types[type] || types.default
+      return typeMap[type] || 'info'
     },
     addInterrupt(type, message) {
       const now = new Date()
@@ -201,6 +218,25 @@ export default {
         message,
         time
       })
+    },
+    // 获取中断日志
+    async fetchInterruptLogs() {
+      if (this.loading) return // 防止重复请求
+      this.loading = true
+      try {
+        const response = await getInterruptLogs()
+        if (response.status === 'success') {
+          this.interrupts = response.data
+        }
+      } catch (error) {
+        console.error('获取中断日志失败:', error)
+      } finally {
+        this.loading = false
+      }
+    },
+    // 格式化时间戳
+    formatTimestamp(timestamp) {
+      return new Date(timestamp).toLocaleString()
     }
   }
 }
@@ -268,12 +304,11 @@ export default {
 
 .interrupt-handling {
   margin-top: 20px;
-  padding: 10px;
-  border: 1px solid #dcdfe6;
+  padding: 20px;
+  background-color: #fff;
   border-radius: 4px;
-  height: 240px;
-  display: flex;
-  flex-direction: column;
+  box-shadow: 0 2px 12px 0 rgba(0,0,0,0.1);
+  height: 230px;
 }
 
 .interrupt-handling h3 {
@@ -283,11 +318,29 @@ export default {
 }
 
 .interrupt-list {
-  flex: 1;
+  margin-top: 15px;
+  max-height: 180px;
   overflow-y: auto;
-  padding-right: 10px;
+  position: relative;
 }
 
+.interrupt-content {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.interrupt-message {
+  font-weight: 500;
+  color: #303133;
+}
+
+.interrupt-result {
+  color: #606266;
+  font-size: 0.9em;
+}
+
+/* 自定义滚动条样式 */
 .interrupt-list::-webkit-scrollbar {
   width: 6px;
 }

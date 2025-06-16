@@ -35,11 +35,11 @@ export function requestDevice(processId, deviceId, timeout) {
 }
 
 // 释放设备
-export function releaseDevice(processId, deviceType) {
+export function releaseDevice(processId, deviceId) {
   return request({
     url: `/process/${processId}/release-device`,
     method: 'post',
-    data: { deviceType }
+    params: { deviceId }
   })
 }
 

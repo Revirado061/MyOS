@@ -250,7 +250,7 @@
               <el-button
                 size="mini"
                 type="danger"
-                @click="handleReleaseDevice(scope.row.type)"
+                @click="handleReleaseDevice(scope.row.id)"
                 :disabled="scope.row.status === 'IDLE'">
                 释放
               </el-button>
@@ -289,7 +289,7 @@
 </template>
 
 <script>
-import { processApi } from '@/api/process_interrupt_device'
+import { processApi, interruptApi } from '@/api/process_interrupt_device'
 import { 
   getAllDevices, 
   getAvailableDevices, 
@@ -553,8 +553,14 @@ export default {
         )
         
         if (response.success) {
+          // 触发中断
+          await interruptApi.triggerInterrupt(this.currentProcessId, 'IO')
+          // 获取进程数据
+          await this.fetchProcesses()
           this.$message.success('设备分配成功')
           this.allocateDialogVisible = false
+
+
           // 刷新设备列表
           await this.fetchDevices()
         } else {
@@ -567,11 +573,11 @@ export default {
     },
 
     // 释放设备
-    async handleReleaseDevice(deviceType) {
+    async handleReleaseDevice(deviceId) {
       try {
         const response = await releaseDevice(
           this.currentProcessId,
-          deviceType
+          deviceId
         )
         
         if (response.success) {
