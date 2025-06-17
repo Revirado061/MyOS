@@ -30,13 +30,16 @@ public class InterruptEventListener {
      * @param event 中断触发事件
      */
     @EventListener
-    public void handleInterruptTriggered(InterruptTriggeredEvent event) {
+    public void handleInterruptTriggeredEvent(InterruptTriggeredEvent event) {
         Interrupt interrupt = event.getInterrupt();
-        logger.info("中断触发 - 类型: {}, 进程ID: {}, 原因: {}, 优先级: {}", 
-            interrupt.getType(),
-            interrupt.getData().get("processId"),
-            interrupt.getData().get("reason"),
-            interrupt.getType().getPriority());
+        // 对于时钟中断，不输出日志
+        if (interrupt.getType() != InterruptType.CLOCK) {
+            logger.info("中断触发 - 类型: {}, 进程ID: {}, 原因: {}, 优先级: {}", 
+                interrupt.getType(),
+                interrupt.getData().get("processId"),
+                interrupt.getData().get("reason"),
+                interrupt.getType().getPriority());
+        }
     }
 
     /**
@@ -44,13 +47,16 @@ public class InterruptEventListener {
      * @param event 中断处理完成事件
      */
     @EventListener
-    public void handleInterruptHandled(InterruptHandledEvent event) {
+    public void handleInterruptHandledEvent(InterruptHandledEvent event) {
         Interrupt interrupt = event.getInterrupt();
-        logger.info("中断处理完成 - 类型: {}, 进程ID: {}, 原因: {}, 处理时间: {}ms", 
-            interrupt.getType(),
-            interrupt.getData().get("processId"),
-            interrupt.getData().get("reason"),
-            event.getProcessingTime());
+        // 对于时钟中断，不输出日志
+        if (interrupt.getType() != InterruptType.CLOCK) {
+            logger.info("中断处理完成 - 类型: {}, 进程ID: {}, 原因: {}, 处理时间: {}ms", 
+                interrupt.getType(),
+                interrupt.getData().get("processId"),
+                interrupt.getData().get("reason"),
+                event.getProcessingTime());
+        }
     }
 
     /**

@@ -20,11 +20,14 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import jakarta.annotation.PostConstruct;
 
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
+
+import com.group.myos.interrupt.event.ClockInterruptEvent;
 
 /**
  * 中断管理器
@@ -43,6 +46,8 @@ public class InterruptManager {
     private static final long PROCESSING_DELAY = 50; // 中断处理延迟改为50ms
     private static final int TIME_SLICE = 1; // 时间片长度（秒）
     private static final int CLOCK_INTERRUPT_HANDLING_TIME = 50; // 时钟中断处理时间（毫秒）
+    private static final int CLOCK_LOG_INTERVAL = 10; // 时钟日志输出间隔（秒）
+    private long clockInterruptCount = 0; // 时钟中断计数器
 
     @Autowired
     private ApplicationEventPublisher eventPublisher;
@@ -262,17 +267,29 @@ public class InterruptManager {
      * 处理时钟中断
      */
     private void handleClockInterrupt(Interrupt interrupt) {
-        // 只在调试级别记录时钟中断
-        log.debug("处理时钟中断，时间片长度: {}秒", TIME_SLICE);
+        clockInterruptCount++; // 增加计数器
+        
+        // 每10次时钟中断记录一次日志（即每10秒）
+        if (clockInterruptCount % 10 == 0) {
+            InterruptLog log = new InterruptLog(
+                logIdGenerator.incrementAndGet(),
+                interrupt.getId(),
+                InterruptType.CLOCK,
+                System.currentTimeMillis(),
+                String.format("时钟中断 - 时间片长度: %d秒, 第%d次时钟中断", 
+                    TIME_SLICE, clockInterruptCount),
+                "已触发"
+            );
+            interruptLogs.add(log);
+            eventPublisher.publishEvent(new InterruptLogUpdatedEvent(this, log));
+        }
+        
         try {
             // 模拟时钟中断处理时间
             Thread.sleep(CLOCK_INTERRUPT_HANDLING_TIME);
             
             // 发布进程调度事件
             eventPublisher.publishEvent(new ProcessSchedulingEvent(this));
-            
-            // 只在调试级别记录处理完成
-            log.debug("时钟中断处理完成，耗时: {}毫秒", CLOCK_INTERRUPT_HANDLING_TIME);
         } catch (InterruptedException e) {
             log.error("时钟中断处理被中断", e);
         }
@@ -297,7 +314,7 @@ public class InterruptManager {
      */
     public List<InterruptLog> getInterruptLogs(int limit, InterruptType type) {
         return interruptLogs.stream()
-            .filter(log -> (type == null || log.getType() == type) && log.getType() != InterruptType.CLOCK)  // 过滤掉时钟中断
+            .filter(log -> type == null || log.getType() == type)  // 移除时钟中断过滤
             .sorted(Comparator.comparing(InterruptLog::getTimestamp).reversed())  // 按时间戳倒序排序
             .limit(limit)
             .collect(Collectors.toList());
@@ -316,6 +333,11 @@ public class InterruptManager {
      * @param interrupt 中断对象
      */
     private void addLog(Interrupt interrupt) {
+        // 对于时钟中断，不记录日志（由handleClockInterrupt方法处理）
+        if (interrupt.getType() == InterruptType.CLOCK) {
+            return;
+        }
+
         InterruptLog log = new InterruptLog(
             logIdGenerator.incrementAndGet(),
             interrupt.getId(),
@@ -326,8 +348,8 @@ public class InterruptManager {
         );
         interruptLogs.add(log);
         
-        // 保持日志数量不超过1000条
-        if (interruptLogs.size() > 1000) {
+        // 保持日志数量不超过5000条
+        if (interruptLogs.size() > 5000) {
             interruptLogs.remove(0);
         }
         
@@ -380,6 +402,12 @@ public class InterruptManager {
         interruptLogs.clear();
         interruptIdGenerator.set(0);
         logIdGenerator.set(0);
+    }
+
+    @EventListener
+    public void handleClockInterruptEvent(ClockInterruptEvent event) {
+        // 触发时钟中断
+        triggerInterrupt(0, InterruptType.CLOCK, null, "系统时钟中断");
     }
 
     @EventListener
