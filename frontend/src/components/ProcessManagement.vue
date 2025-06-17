@@ -204,9 +204,6 @@
             :filter-method="filterDeviceType"
             filter-placement="bottom"
           >
-            <template slot-scope="scope">
-              {{ getDeviceTypeText(scope.row.type) }}
-            </template>
           </el-table-column>
           <el-table-column 
             prop="status" 
@@ -657,18 +654,6 @@ export default {
         'ERROR': '错误'
       }
       return statuses[status] || status
-    },
-
-    // 获取设备类型文本
-    getDeviceTypeText(type) {
-      const types = {
-        'PRINTER': '打印机',
-        'DISK': '磁盘',
-        'SCANNER': '扫描仪',
-        'NETWORK': '网络设备',
-        'OTHER': '其他'
-      }
-      return types[type] || type
     },
   }
 }

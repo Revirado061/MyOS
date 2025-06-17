@@ -1,7 +1,7 @@
 <template>
   <div id="app">
     <el-tabs v-model="activeTab" type="border-card">
-      <el-tab-pane label="进程与内存管理" name="process">
+      <el-tab-pane label="进程、内存、设备、中断管理" name="process">
         <div class="tab-content">
           <system-clock></system-clock>
           <div class="management-container">
