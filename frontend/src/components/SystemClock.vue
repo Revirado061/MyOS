@@ -1,7 +1,7 @@
 <template>
   <div class="system-clock">
-    <span class="clock-display">{{ formatTime(currentTime) }} / {{currentTime }}</span>
-  </div></span>
+    <span class="clock-display">{{ formatTime(currentTime) }}  / {{ currentTime }}</span>
+  </div>
 </template>
 
 <script>
