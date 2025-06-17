@@ -345,6 +345,7 @@ export default {
       try {
         await writeFileContent(this.currentFile, this.fileContent)
         this.isEditing = false
+        this.fetchDiskData()
         this.$message.success('文件保存成功')
       } catch (error) {
         this.$message.error('文件保存失败')

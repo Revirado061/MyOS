@@ -226,7 +226,7 @@ export default {
       try {
         const response = await getInterruptLogs()
         if (response.status === 'success') {
-          this.interrupts = response.data
+          this.interrupts = response.data.logs
         }
       } catch (error) {
         console.error('获取中断日志失败:', error)
