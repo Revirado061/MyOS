@@ -7,9 +7,9 @@
         </el-form-item>
         <el-form-item label="优先级">
           <el-select v-model="processForm.priority" placeholder="请选择">
-            <el-option label="高" :value="1"></el-option>
+            <el-option label="高" :value="3"></el-option>
             <el-option label="中" :value="2"></el-option>
-            <el-option label="低" :value="3"></el-option>
+            <el-option label="低" :value="1"></el-option>
           </el-select>
         </el-form-item>
         <el-form-item label="内存大小">
@@ -29,7 +29,7 @@
           <el-tag v-for="process in readyQueue" :key="process.id" class="process-tag">
             <div class="process-info">
               <span>{{ process.name }}</span>
-              <el-tag size="small" type="info">P{{ process.priority }}</el-tag>
+              <el-tag size="small" :type="getPriorityType(process.priority)">P{{ process.priority }}</el-tag>
               <el-tag size="small" type="info">{{ process.memorySize }}MB</el-tag>
             </div>
           </el-tag>
@@ -42,7 +42,7 @@
           <el-tag v-for="process in runningQueue" :key="process.id" type="success" class="process-tag">
             <div class="process-info">
               <span>{{ process.name }}</span>
-              <el-tag size="small" type="info">P{{ process.priority }}</el-tag>
+              <el-tag size="small" :type="getPriorityType(process.priority)">P{{ process.priority }}</el-tag>
               <el-tag size="small" type="info">{{ process.memorySize }}MB</el-tag>
             </div>
           </el-tag>
@@ -55,7 +55,7 @@
           <el-tag v-for="process in blockedQueue" :key="process.id" type="warning" class="process-tag">
             <div class="process-info">
               <span>{{ process.name }}</span>
-              <el-tag size="small" type="info">P{{ process.priority }}</el-tag>
+              <el-tag size="small" :type="getPriorityType(process.priority)">P{{ process.priority }}</el-tag>
               <el-tag size="small" type="info">{{ process.memorySize }}MB</el-tag>
             </div>
           </el-tag>
@@ -68,7 +68,7 @@
           <el-tag v-for="process in terminatedQueue" :key="process.id" type="info" class="process-tag">
             <div class="process-info">
               <span>{{ process.name }}</span>
-              <el-tag size="small" type="info">P{{ process.priority }}</el-tag>
+              <el-tag size="small" :type="getPriorityType(process.priority)">P{{ process.priority }}</el-tag>
               <el-tag size="small" type="info">{{ process.memorySize }}MB</el-tag>
             </div>
           </el-tag>
@@ -116,9 +116,9 @@
           width="80" 
           align="center"
           :filters="[
-            { text: '高', value: 1 },
+            { text: '高', value: 3 },
             { text: '中', value: 2 },
-            { text: '低', value: 3 }
+            { text: '低', value: 1 }
           ]"
           :filter-method="filterPriority"
           filter-placement="bottom"
@@ -378,9 +378,9 @@ export default {
     // 处理前端显示细节
     getPriorityType(priority) {
       const types = {
-        1: 'danger',
-        2: 'warning',
-        3: 'info'
+        1: 'info',    // 低优先级
+        2: 'warning', // 中优先级
+        3: 'danger'   // 高优先级
       }
       return types[priority] || 'info'
     },
